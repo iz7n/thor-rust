@@ -1,4 +1,3 @@
 target/
-output.ll
-output.o
-thor
+test.o
+test
