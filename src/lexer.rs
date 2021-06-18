@@ -1,4 +1,4 @@
-use crate::Token;
+use crate::{Token, TypeLiteral};
 use Token::*;
 
 pub struct Lexer {
@@ -153,14 +153,22 @@ impl Lexer {
 
     fn number(&mut self) -> Token {
         let mut num_str: String = self.current_char.to_string();
+        let mut decimals = 0;
         self.advance();
 
-        while "0123456789".contains(self.current_char) {
+        while "0123456789.".contains(self.current_char) {
+            if self.current_char == '.' {
+                decimals += 1;
+            }
             num_str.push(self.current_char);
             self.advance();
         }
 
-        Int(num_str.parse::<i32>().unwrap())
+        if decimals > 0 {
+            Float(num_str.parse::<f64>().unwrap())
+        } else {
+            Int(num_str.parse::<i32>().unwrap())
+        }
     }
 
     fn word(&mut self) -> Token {
@@ -178,6 +186,11 @@ impl Lexer {
         }
 
         match word.as_str() {
+            "true" => Bool(true),
+            "false" => Bool(false),
+            "int" => Type(TypeLiteral::Int),
+            "float" => Type(TypeLiteral::Float),
+            "bool" => Type(TypeLiteral::Bool),
             "not" => Not,
             "and" => And,
             "or" => Or,

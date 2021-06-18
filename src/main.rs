@@ -16,11 +16,11 @@ mod node;
 mod parser;
 mod token;
 
-pub use compiler::Codegen;
+pub use compiler::*;
 pub use lexer::Lexer;
 pub use node::{BinaryOp, IdentifierOp, Node, UnaryOp};
 pub use parser::Parser;
-pub use token::Token;
+pub use token::{Token, TypeLiteral};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -31,6 +31,10 @@ fn main() {
         3 => match args[2].as_str() {
             "--log" => compile_file(&args[1], "output.o", true),
             out_filename => compile_file(&args[1], out_filename, false),
+        },
+        4 => match args[3].as_str() {
+            "--log" => compile_file(&args[1], &args[2], true),
+            _ => panic!("Too many arguments passed"),
         },
         _ => panic!("Too many arguments passed"),
     };
@@ -47,13 +51,17 @@ fn compile(text: String, filename: &str, out_filename: &str, log: bool) {
     let mut lexer = Lexer::new(text);
     let tokens = lexer.lex();
     if log {
-        println!("tokens: {:?}", tokens);
+        println!("tokens:");
+        for token in &tokens {
+            print!(" {}", token);
+        }
+        print!("\n");
     }
 
     let mut parser = Parser::new(tokens);
     let ast = parser.parse();
     if log {
-        println!("ast: {:?}", ast);
+        println!("ast: {}", ast);
     }
 
     let context = Context::create();

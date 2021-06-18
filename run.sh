@@ -1,3 +1,4 @@
 #!/bin/sh
-cargo run -- test.thor test
+clear
+cargo run -- test.thor test $1
 ./test

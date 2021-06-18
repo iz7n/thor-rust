@@ -5,18 +5,24 @@ use inkwell::{
     context::Context,
     module::Module,
     types::BasicTypeEnum,
-    values::{BasicValueEnum, FunctionValue, IntValue, PointerValue},
-    IntPredicate,
+    values::{BasicValueEnum, FloatValue, FunctionValue, IntValue, PointerValue},
+    FloatPredicate, IntPredicate,
 };
 
-use crate::{BinaryOp, IdentifierOp, Node, UnaryOp};
+use crate::{BinaryOp, IdentifierOp, Node, TypeLiteral, UnaryOp};
+
+pub enum Value<'ctx> {
+    Int(IntValue<'ctx>),
+    Float(FloatValue<'ctx>),
+    Bool(IntValue<'ctx>),
+}
 
 pub struct Codegen<'a, 'ctx> {
     pub context: &'ctx Context,
     pub module: &'a Module<'ctx>,
     pub builder: Builder<'ctx>,
-    pub functions: HashMap<String, FunctionValue<'ctx>>,
-    pub variables: HashMap<String, PointerValue<'ctx>>,
+    pub functions: HashMap<String, (FunctionValue<'ctx>, TypeLiteral)>,
+    pub variables: HashMap<String, (PointerValue<'ctx>, TypeLiteral)>,
 }
 
 impl<'a, 'ctx> Codegen<'a, 'ctx> {
@@ -29,14 +35,27 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
     pub fn generate_llvm_ir(&mut self, ast: Node) {
         self.visit(ast);
         self.builder
-            .build_return(Some(&self.context.i32_type().const_int(0, false)));
+            .build_return(Some(&self.context.i32_type().const_zero()));
     }
 
-    fn visit(&mut self, node: Node) -> IntValue<'ctx> {
+    fn visit(&mut self, node: Node) -> Value<'ctx> {
         match node {
-            Node::Int(value) => self.context.i32_type().const_int(value as u64, true),
+            Node::Int(value) => Value::Int(self.context.i32_type().const_int(value as u64, true)),
+            Node::Float(value) => Value::Float(self.context.f64_type().const_float(value)),
+            Node::Bool(value) => Value::Bool(
+                self.context
+                    .bool_type()
+                    .const_int(if value { 1 } else { 0 }, false),
+            ),
             Node::Identifier(name) => match self.variables.get(name.as_str()) {
-                Some(var) => self.builder.build_load(*var, &name).into_int_value(),
+                Some((ptr, literal)) => {
+                    let value = self.builder.build_load(*ptr, &name);
+                    match literal {
+                        TypeLiteral::Int => Value::Int(value.into_int_value()),
+                        TypeLiteral::Float => Value::Float(value.into_float_value()),
+                        TypeLiteral::Bool => Value::Bool(value.into_int_value()),
+                    }
+                }
                 None => panic!("{} is not defined", name),
             },
             Node::Unary(op, node) => {
@@ -45,44 +64,344 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                 use UnaryOp::*;
                 match op {
                     Pos => value,
-                    Neg => value.const_neg(),
-                    Not => value,
+                    Neg => match value {
+                        Value::Int(value) => Value::Int(value.const_neg()),
+                        Value::Float(value) => Value::Float(value.const_neg()),
+                        Value::Bool(_) => unimplemented!(),
+                    },
+                    Not => match value {
+                        Value::Int(value) => Value::Bool(self.builder.build_int_compare(
+                            IntPredicate::EQ,
+                            value,
+                            self.context.i32_type().const_zero(),
+                            "not",
+                        )),
+                        Value::Float(value) => Value::Bool(self.builder.build_float_compare(
+                            FloatPredicate::OEQ,
+                            value,
+                            self.context.f64_type().const_zero(),
+                            "not",
+                        )),
+                        Value::Bool(value) => Value::Bool(self.builder.build_int_compare(
+                            IntPredicate::EQ,
+                            value,
+                            self.context.bool_type().const_zero(),
+                            "not",
+                        )),
+                    },
                 }
             }
             Node::Binary(left, op, right) => {
                 let l_value = self.visit(*left);
                 let r_value = self.visit(*right);
 
+                let f64_type = self.context.f64_type();
+
                 use BinaryOp::*;
                 match op {
-                    Add => self.builder.build_int_add(l_value, r_value, "add"),
-                    Sub => self.builder.build_int_sub(l_value, r_value, "sub"),
-                    Mul => self.builder.build_int_mul(l_value, r_value, "mul"),
-                    Div => self.builder.build_int_signed_div(l_value, r_value, "div"),
-                    And => self.builder.build_and(l_value, r_value, "and"),
-                    Or => self.builder.build_or(l_value, r_value, "or"),
-                    EqEq => {
-                        self.builder
-                            .build_int_compare(IntPredicate::EQ, l_value, r_value, "eqeq")
-                    }
-                    Neq => {
-                        self.builder
-                            .build_int_compare(IntPredicate::NE, l_value, r_value, "neq")
-                    }
-                    Lt => self
-                        .builder
-                        .build_int_compare(IntPredicate::SLT, l_value, r_value, "lt"),
-                    Lte => {
-                        self.builder
-                            .build_int_compare(IntPredicate::SLE, l_value, r_value, "lte")
-                    }
-                    Gt => self
-                        .builder
-                        .build_int_compare(IntPredicate::SGT, l_value, r_value, "gt"),
-                    Gte => {
-                        self.builder
-                            .build_int_compare(IntPredicate::SGE, l_value, r_value, "gte")
-                    }
+                    Add => match l_value {
+                        Value::Int(l) => match r_value {
+                            Value::Int(r) => Value::Int(self.builder.build_int_add(l, r, "add")),
+                            Value::Float(r) => Value::Float(self.builder.build_float_add(
+                                self.builder.build_signed_int_to_float(l, f64_type, "left"),
+                                r,
+                                "add",
+                            )),
+                            _ => unimplemented!(),
+                        },
+                        Value::Float(l) => match r_value {
+                            Value::Int(r) => Value::Float(self.builder.build_float_add(
+                                l,
+                                self.builder.build_signed_int_to_float(r, f64_type, "right"),
+                                "add",
+                            )),
+                            Value::Float(r) => {
+                                Value::Float(self.builder.build_float_add(l, r, "add"))
+                            }
+                            _ => unimplemented!(),
+                        },
+                        _ => unimplemented!(),
+                    },
+                    Sub => match l_value {
+                        Value::Int(l) => match r_value {
+                            Value::Int(r) => Value::Int(self.builder.build_int_sub(l, r, "sub")),
+                            Value::Float(r) => Value::Float(self.builder.build_float_sub(
+                                self.builder.build_signed_int_to_float(l, f64_type, "left"),
+                                r,
+                                "sub",
+                            )),
+                            _ => unimplemented!(),
+                        },
+                        Value::Float(l) => match r_value {
+                            Value::Int(r) => Value::Float(self.builder.build_float_sub(
+                                l,
+                                self.builder.build_signed_int_to_float(r, f64_type, "right"),
+                                "sub",
+                            )),
+                            Value::Float(r) => {
+                                Value::Float(self.builder.build_float_sub(l, r, "sub"))
+                            }
+                            _ => unimplemented!(),
+                        },
+                        _ => unimplemented!(),
+                    },
+                    Mul => match l_value {
+                        Value::Int(l) => match r_value {
+                            Value::Int(r) => Value::Int(self.builder.build_int_mul(l, r, "mul")),
+                            Value::Float(r) => Value::Float(self.builder.build_float_mul(
+                                self.builder.build_signed_int_to_float(l, f64_type, "left"),
+                                r,
+                                "mul",
+                            )),
+                            _ => unimplemented!(),
+                        },
+                        Value::Float(l) => match r_value {
+                            Value::Int(r) => Value::Float(self.builder.build_float_mul(
+                                l,
+                                self.builder.build_signed_int_to_float(r, f64_type, "right"),
+                                "mul",
+                            )),
+                            Value::Float(r) => {
+                                Value::Float(self.builder.build_float_mul(l, r, "mul"))
+                            }
+                            _ => unimplemented!(),
+                        },
+                        _ => unimplemented!(),
+                    },
+                    Div => match l_value {
+                        Value::Int(l) => match r_value {
+                            Value::Int(r) => {
+                                Value::Int(self.builder.build_int_unsigned_div(l, r, "div"))
+                            }
+                            Value::Float(r) => Value::Float(self.builder.build_float_div(
+                                self.builder.build_signed_int_to_float(l, f64_type, "left"),
+                                r,
+                                "div",
+                            )),
+                            _ => unimplemented!(),
+                        },
+                        Value::Float(l) => match r_value {
+                            Value::Int(r) => Value::Float(self.builder.build_float_div(
+                                l,
+                                self.builder.build_signed_int_to_float(r, f64_type, "right"),
+                                "div",
+                            )),
+                            Value::Float(r) => {
+                                Value::Float(self.builder.build_float_div(l, r, "div"))
+                            }
+                            _ => unimplemented!(),
+                        },
+                        _ => unimplemented!(),
+                    },
+                    And => unimplemented!(),
+                    Or => unimplemented!(),
+                    EqEq => match l_value {
+                        Value::Int(l) => match r_value {
+                            Value::Int(r) => Value::Bool(self.builder.build_int_compare(
+                                IntPredicate::EQ,
+                                l,
+                                r,
+                                "eqeq",
+                            )),
+                            Value::Float(r) => Value::Bool(self.builder.build_float_compare(
+                                FloatPredicate::OEQ,
+                                self.builder.build_signed_int_to_float(l, f64_type, "left"),
+                                r,
+                                "eqeq",
+                            )),
+                            _ => unimplemented!(),
+                        },
+                        Value::Float(l) => match r_value {
+                            Value::Int(r) => Value::Bool(self.builder.build_float_compare(
+                                FloatPredicate::OEQ,
+                                l,
+                                self.builder.build_signed_int_to_float(r, f64_type, "right"),
+                                "eqeq",
+                            )),
+                            Value::Float(r) => Value::Bool(self.builder.build_float_compare(
+                                FloatPredicate::OEQ,
+                                l,
+                                r,
+                                "eqeq",
+                            )),
+                            _ => unimplemented!(),
+                        },
+                        Value::Bool(l) => match r_value {
+                            Value::Bool(r) => Value::Bool(
+                                self.builder
+                                    .build_not(self.builder.build_xor(l, r, "xor"), "not"),
+                            ),
+                            _ => unimplemented!(),
+                        },
+                    },
+                    Neq => match l_value {
+                        Value::Int(l) => match r_value {
+                            Value::Int(r) => Value::Bool(self.builder.build_int_compare(
+                                IntPredicate::NE,
+                                l,
+                                r,
+                                "neq",
+                            )),
+                            Value::Float(r) => Value::Bool(self.builder.build_float_compare(
+                                FloatPredicate::ONE,
+                                self.builder.build_signed_int_to_float(l, f64_type, "left"),
+                                r,
+                                "neq",
+                            )),
+                            _ => unimplemented!(),
+                        },
+                        Value::Float(l) => match r_value {
+                            Value::Int(r) => Value::Bool(self.builder.build_float_compare(
+                                FloatPredicate::ONE,
+                                l,
+                                self.builder.build_signed_int_to_float(r, f64_type, "right"),
+                                "neq",
+                            )),
+                            Value::Float(r) => Value::Bool(self.builder.build_float_compare(
+                                FloatPredicate::ONE,
+                                l,
+                                r,
+                                "neq",
+                            )),
+                            _ => unimplemented!(),
+                        },
+                        Value::Bool(l) => match r_value {
+                            Value::Bool(r) => Value::Bool(self.builder.build_xor(l, r, "xor")),
+                            _ => unimplemented!(),
+                        },
+                    },
+                    Lt => match l_value {
+                        Value::Int(l) => match r_value {
+                            Value::Int(r) => Value::Bool(self.builder.build_int_compare(
+                                IntPredicate::SLT,
+                                l,
+                                r,
+                                "lt",
+                            )),
+                            Value::Float(r) => Value::Bool(self.builder.build_float_compare(
+                                FloatPredicate::OLT,
+                                self.builder.build_signed_int_to_float(l, f64_type, "left"),
+                                r,
+                                "lt",
+                            )),
+                            _ => unimplemented!(),
+                        },
+                        Value::Float(l) => match r_value {
+                            Value::Int(r) => Value::Bool(self.builder.build_float_compare(
+                                FloatPredicate::OLT,
+                                l,
+                                self.builder.build_signed_int_to_float(r, f64_type, "right"),
+                                "lt",
+                            )),
+                            Value::Float(r) => Value::Bool(self.builder.build_float_compare(
+                                FloatPredicate::OLT,
+                                l,
+                                r,
+                                "lt",
+                            )),
+                            _ => unimplemented!(),
+                        },
+                        _ => unimplemented!(),
+                    },
+                    Lte => match l_value {
+                        Value::Int(l) => match r_value {
+                            Value::Int(r) => Value::Bool(self.builder.build_int_compare(
+                                IntPredicate::SLE,
+                                l,
+                                r,
+                                "lte",
+                            )),
+                            Value::Float(r) => Value::Bool(self.builder.build_float_compare(
+                                FloatPredicate::OLE,
+                                self.builder.build_signed_int_to_float(l, f64_type, "left"),
+                                r,
+                                "lte",
+                            )),
+                            _ => unimplemented!(),
+                        },
+                        Value::Float(l) => match r_value {
+                            Value::Int(r) => Value::Bool(self.builder.build_float_compare(
+                                FloatPredicate::OLE,
+                                l,
+                                self.builder.build_signed_int_to_float(r, f64_type, "right"),
+                                "lte",
+                            )),
+                            Value::Float(r) => Value::Bool(self.builder.build_float_compare(
+                                FloatPredicate::OLE,
+                                l,
+                                r,
+                                "lte",
+                            )),
+                            _ => unimplemented!(),
+                        },
+                        _ => unimplemented!(),
+                    },
+                    Gt => match l_value {
+                        Value::Int(l) => match r_value {
+                            Value::Int(r) => Value::Bool(self.builder.build_int_compare(
+                                IntPredicate::SGT,
+                                l,
+                                r,
+                                "gt",
+                            )),
+                            Value::Float(r) => Value::Bool(self.builder.build_float_compare(
+                                FloatPredicate::OGT,
+                                self.builder.build_signed_int_to_float(l, f64_type, "left"),
+                                r,
+                                "gt",
+                            )),
+                            _ => unimplemented!(),
+                        },
+                        Value::Float(l) => match r_value {
+                            Value::Int(r) => Value::Bool(self.builder.build_float_compare(
+                                FloatPredicate::OGT,
+                                l,
+                                self.builder.build_signed_int_to_float(r, f64_type, "right"),
+                                "gt",
+                            )),
+                            Value::Float(r) => Value::Bool(self.builder.build_float_compare(
+                                FloatPredicate::OGT,
+                                l,
+                                r,
+                                "gt",
+                            )),
+                            _ => unimplemented!(),
+                        },
+                        _ => unimplemented!(),
+                    },
+                    Gte => match l_value {
+                        Value::Int(l) => match r_value {
+                            Value::Int(r) => Value::Bool(self.builder.build_int_compare(
+                                IntPredicate::SGE,
+                                l,
+                                r,
+                                "gte",
+                            )),
+                            Value::Float(r) => Value::Bool(self.builder.build_float_compare(
+                                FloatPredicate::OGE,
+                                self.builder.build_signed_int_to_float(l, f64_type, "left"),
+                                r,
+                                "gte",
+                            )),
+                            _ => unimplemented!(),
+                        },
+                        Value::Float(l) => match r_value {
+                            Value::Int(r) => Value::Bool(self.builder.build_float_compare(
+                                FloatPredicate::OGE,
+                                l,
+                                self.builder.build_signed_int_to_float(r, f64_type, "right"),
+                                "gte",
+                            )),
+                            Value::Float(r) => Value::Bool(self.builder.build_float_compare(
+                                FloatPredicate::OGE,
+                                l,
+                                r,
+                                "gte",
+                            )),
+                            _ => unimplemented!(),
+                        },
+                        _ => unimplemented!(),
+                    },
                 }
             }
             Node::IdentifierOp(name, op, node) => {
@@ -92,12 +411,41 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                 match op {
                     Eq => {
                         let val_ptr_result = self.variables.get(name.as_str());
-                        let val_ptr = match val_ptr_result {
-                            None => self.builder.build_alloca(self.context.i32_type(), &name),
-                            _ => *val_ptr_result.unwrap(),
+                        match value {
+                            Value::Int(value) => {
+                                println!("int value: {:?}", value);
+                                let val_ptr = match val_ptr_result {
+                                    None => {
+                                        self.builder.build_alloca(self.context.i32_type(), &name)
+                                    }
+                                    Some((ptr, _)) => *ptr,
+                                };
+                                self.variables.insert(name, (val_ptr, TypeLiteral::Int));
+                                self.builder.build_store(val_ptr, value);
+                            }
+                            Value::Float(value) => {
+                                println!("float value: {:?}", value);
+                                let val_ptr = match val_ptr_result {
+                                    None => {
+                                        self.builder.build_alloca(self.context.f64_type(), &name)
+                                    }
+                                    Some((ptr, _)) => *ptr,
+                                };
+                                self.variables.insert(name, (val_ptr, TypeLiteral::Float));
+                                self.builder.build_store(val_ptr, value);
+                            }
+                            Value::Bool(value) => {
+                                println!("bool value: {:?}", value);
+                                let val_ptr = match val_ptr_result {
+                                    None => {
+                                        self.builder.build_alloca(self.context.bool_type(), &name)
+                                    }
+                                    Some((ptr, _)) => *ptr,
+                                };
+                                self.variables.insert(name, (val_ptr, TypeLiteral::Bool));
+                                self.builder.build_store(val_ptr, value);
+                            }
                         };
-                        self.variables.insert(name, val_ptr);
-                        self.builder.build_store(val_ptr, value);
 
                         value
                     }
@@ -139,27 +487,77 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                     )),
                 }
             }
-            Node::Fn(name, args, body) => {
+            Node::Fn(name, args, return_type, body) => {
                 let i32_type = self.context.i32_type();
-                let fn_type = i32_type.fn_type(
-                    args.iter()
-                        .map(|_| BasicTypeEnum::IntType(i32_type))
-                        .collect::<Vec<BasicTypeEnum>>()
-                        .as_slice(),
-                    false,
-                );
+                let f64_type = self.context.f64_type();
+                let bool_type = self.context.bool_type();
+
+                println!("rtn: {}, args: {:?}", return_type, args);
+
+                let fn_type = match return_type {
+                    TypeLiteral::Int => i32_type.fn_type(
+                        args.iter()
+                            .map(|(_, literal)| match literal {
+                                TypeLiteral::Int => BasicTypeEnum::IntType(i32_type),
+                                TypeLiteral::Float => BasicTypeEnum::FloatType(f64_type),
+                                TypeLiteral::Bool => BasicTypeEnum::IntType(bool_type),
+                            })
+                            .collect::<Vec<BasicTypeEnum>>()
+                            .as_slice(),
+                        false,
+                    ),
+                    TypeLiteral::Float => f64_type.fn_type(
+                        args.iter()
+                            .map(|(_, literal)| match literal {
+                                TypeLiteral::Int => BasicTypeEnum::IntType(i32_type),
+                                TypeLiteral::Float => BasicTypeEnum::FloatType(f64_type),
+                                TypeLiteral::Bool => BasicTypeEnum::IntType(bool_type),
+                            })
+                            .collect::<Vec<BasicTypeEnum>>()
+                            .as_slice(),
+                        false,
+                    ),
+                    TypeLiteral::Bool => bool_type.fn_type(
+                        args.iter()
+                            .map(|(_, literal)| match literal {
+                                TypeLiteral::Int => BasicTypeEnum::IntType(i32_type),
+                                TypeLiteral::Float => BasicTypeEnum::FloatType(f64_type),
+                                TypeLiteral::Bool => BasicTypeEnum::IntType(bool_type),
+                            })
+                            .collect::<Vec<BasicTypeEnum>>()
+                            .as_slice(),
+                        false,
+                    ),
+                };
                 let function = self.module.add_function(&name, fn_type, None);
                 let block = self.context.append_basic_block(function, "body");
                 let builder = self.context.create_builder();
                 builder.position_at_end(block);
 
-                let mut variables: HashMap<String, PointerValue<'ctx>> = HashMap::new();
-                args.iter().enumerate().for_each(|(i, arg)| {
-                    let value = function.get_nth_param(i as u32).unwrap().into_int_value();
-                    let val_ptr = builder.build_alloca(self.context.i32_type(), &arg);
-                    variables.insert(arg.clone(), val_ptr);
-                    builder.build_store(val_ptr, value);
-                });
+                let mut variables: HashMap<String, (PointerValue<'ctx>, TypeLiteral)> =
+                    HashMap::new();
+                args.iter()
+                    .enumerate()
+                    .for_each(|(i, (arg_name, literal))| {
+                        let value = function.get_nth_param(i as u32).unwrap();
+                        match literal {
+                            TypeLiteral::Int => {
+                                let val_ptr = builder.build_alloca(i32_type, &arg_name);
+                                variables.insert(arg_name.clone(), (val_ptr, TypeLiteral::Int));
+                                builder.build_store(val_ptr, value.into_int_value());
+                            }
+                            TypeLiteral::Float => {
+                                let val_ptr = builder.build_alloca(f64_type, &arg_name);
+                                variables.insert(arg_name.clone(), (val_ptr, TypeLiteral::Float));
+                                builder.build_store(val_ptr, value.into_float_value());
+                            }
+                            TypeLiteral::Bool => {
+                                let val_ptr = builder.build_alloca(bool_type, &arg_name);
+                                variables.insert(arg_name.clone(), (val_ptr, TypeLiteral::Bool));
+                                builder.build_store(val_ptr, value.into_int_value());
+                            }
+                        };
+                    });
 
                 let mut codegen = Self {
                     context: self.context,
@@ -171,29 +569,36 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                 codegen.add_printf();
                 codegen.visit(*body);
 
-                self.functions.insert(name, function);
+                self.functions.insert(name, (function, return_type));
 
-                i32_type.const_int(0, false)
+                Value::Int(i32_type.const_zero())
             }
             Node::Return(node) => {
                 let value = self.visit(*node);
-                self.builder.build_return(Some(&value));
-                self.context.i32_type().const_int(0, false)
+                self.builder.build_return(Some(match &value {
+                    Value::Int(value) => value,
+                    Value::Float(value) => value,
+                    Value::Bool(value) => value,
+                }));
+                Value::Int(self.context.i32_type().const_zero())
             }
             Node::Call(name, args) => {
-                let mut compiled_args: Vec<IntValue<'ctx>> = vec![];
+                let mut compiled_args: Vec<Value<'ctx>> = vec![];
                 for arg in args {
                     compiled_args.push(self.visit(arg));
                 }
 
                 let fn_value = self.functions.get(&name).clone();
                 match fn_value {
-                    Some(function) => {
-                        let mut argsv: Vec<BasicValueEnum<'ctx>> = compiled_args
-                            .iter()
-                            .by_ref()
-                            .map(|&val| val.into())
-                            .collect();
+                    Some((function, return_type)) => {
+                        let mut argsv: Vec<BasicValueEnum<'ctx>> = vec![];
+                        for val in compiled_args {
+                            argsv.push(match val {
+                                Value::Int(value) => value.into(),
+                                Value::Float(value) => value.into(),
+                                Value::Bool(value) => value.into(),
+                            });
+                        }
 
                         if name == "print" {
                             let format_string = self.generate_printf_format_string(argsv.clone());
@@ -213,7 +618,11 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                             .try_as_basic_value()
                             .left()
                         {
-                            Some(value) => value.into_int_value(),
+                            Some(value) => match return_type {
+                                TypeLiteral::Int => Value::Int(value.into_int_value()),
+                                TypeLiteral::Float => Value::Float(value.into_float_value()),
+                                TypeLiteral::Bool => Value::Bool(value.into_int_value()),
+                            },
                             None => panic!("Invalid call to {}", name),
                         }
                     }
@@ -224,7 +633,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                 for node in nodes {
                     self.visit(node);
                 }
-                self.context.i32_type().const_int(0, false)
+                Value::Int(self.context.i32_type().const_zero())
             }
             _ => panic!("Unknown node: {:?}", node),
         }

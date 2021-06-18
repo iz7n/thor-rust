@@ -1,6 +1,6 @@
 use inkwell::{module::Linkage, types::BasicTypeEnum, values::BasicValueEnum};
 
-use crate::compiler::Codegen;
+use crate::{compiler::Codegen, TypeLiteral};
 
 impl<'a, 'ctx> Codegen<'a, 'ctx> {
     pub fn generate_main_fn(&self) {
@@ -25,7 +25,8 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
             .module
             .add_function("printf", printf_type, Some(Linkage::External));
 
-        self.functions.insert("print".to_string(), printf_fn);
+        self.functions
+            .insert("print".to_string(), (printf_fn, TypeLiteral::Int));
     }
 
     pub fn generate_printf_format_string(
@@ -38,7 +39,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
             let format_arg = match arg {
                 BasicValueEnum::IntValue(_) => "%i ",
                 BasicValueEnum::FloatValue(_) => "%f ",
-                BasicValueEnum::PointerValue(_) => "%s ",
+                BasicValueEnum::PointerValue(_) => "%p ",
                 _ => panic!("Invalid arg type for printf"),
             };
 

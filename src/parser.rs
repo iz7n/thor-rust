@@ -1,4 +1,4 @@
-use crate::{BinaryOp, IdentifierOp, Node, Token, UnaryOp};
+use crate::{BinaryOp, IdentifierOp, Node, Token, TypeLiteral, UnaryOp};
 
 pub struct Parser {
     tokens: Vec<Token>,
@@ -259,6 +259,14 @@ impl Parser {
                 self.advance();
                 Node::Int(value)
             }
+            Float(value) => {
+                self.advance();
+                Node::Float(value)
+            }
+            Bool(value) => {
+                self.advance();
+                Node::Bool(value)
+            }
             Identifier(name) => {
                 self.advance();
                 Node::Identifier(name)
@@ -378,21 +386,57 @@ impl Parser {
         }
         self.advance();
 
-        let args = self
-            .list(RParen)
-            .iter()
-            .map(|arg| match arg {
-                Node::Identifier(name) => name.clone(),
+        let mut args: Vec<(String, TypeLiteral)> = vec![];
+
+        while self.token != RParen {
+            let name = match &self.token {
+                Identifier(name) => name.clone(),
                 _ => panic!("expected identifier"),
-            })
-            .collect();
+            };
+            self.advance();
+
+            if self.token != Colon {
+                panic!("expected ':'");
+            }
+            self.advance();
+
+            let literal = match &self.token {
+                Type(literal) => literal.clone(),
+                _ => panic!("expected a type"),
+            };
+            self.advance();
+
+            match &self.token {
+                Comma => self.advance(),
+                RParen => {}
+                _ => panic!("expected ',' or ')'"),
+            };
+
+            args.push((name, literal));
+        }
+
+        if self.token != RParen {
+            panic!("expected '{}'", RParen);
+        }
+        self.advance();
+
+        if self.token != Colon {
+            panic!("expected ':'");
+        }
+        self.advance();
+
+        let return_type = match &self.token {
+            Type(literal) => literal.clone(),
+            _ => panic!("expected type"),
+        };
+        self.advance();
 
         let body = match self.token {
             LBrace => self.block(),
             _ => panic!("{}", "expected '{'"),
         };
 
-        Node::Fn(name.to_string(), args, Box::new(body))
+        Node::Fn(name.to_string(), args, return_type, Box::new(body))
     }
 
     fn list(&mut self, end: Token) -> Vec<Node> {
