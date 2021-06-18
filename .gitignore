@@ -1,0 +1,4 @@
+target/
+output.ll
+output.o
+thor
