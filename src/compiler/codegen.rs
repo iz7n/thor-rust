@@ -47,6 +47,37 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                     .bool_type()
                     .const_int(if value { 1 } else { 0 }, false),
             ),
+            Node::Cast(literal, node) => {
+                let value = self.visit(*node);
+
+                let i32_type = self.context.i32_type();
+                let f64_type = self.context.f64_type();
+                let bool_type = self.context.bool_type();
+
+                match literal {
+                    TypeLiteral::Int => Value::Int(match value {
+                        Value::Int(value) | Value::Bool(value) => value,
+                        Value::Float(value) => self
+                            .builder
+                            .build_float_to_signed_int(value, i32_type, "int"),
+                    }),
+                    TypeLiteral::Float => Value::Float(match value {
+                        Value::Int(value) => self
+                            .builder
+                            .build_signed_int_to_float(value, f64_type, "float"),
+                        Value::Float(value) => value,
+                        Value::Bool(value) => self
+                            .builder
+                            .build_unsigned_int_to_float(value, f64_type, "float"),
+                    }),
+                    TypeLiteral::Bool => Value::Bool(match value {
+                        Value::Int(value) | Value::Bool(value) => value,
+                        Value::Float(value) => self
+                            .builder
+                            .build_float_to_unsigned_int(value, bool_type, "bool"),
+                    }),
+                }
+            }
             Node::Identifier(name) => match self.variables.get(name.as_str()) {
                 Some((ptr, literal)) => {
                     let value = self.builder.build_load(*ptr, &name);
@@ -413,7 +444,6 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                         let val_ptr_result = self.variables.get(name.as_str());
                         match value {
                             Value::Int(value) => {
-                                println!("int value: {:?}", value);
                                 let val_ptr = match val_ptr_result {
                                     None => {
                                         self.builder.build_alloca(self.context.i32_type(), &name)
@@ -424,7 +454,6 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                                 self.builder.build_store(val_ptr, value);
                             }
                             Value::Float(value) => {
-                                println!("float value: {:?}", value);
                                 let val_ptr = match val_ptr_result {
                                     None => {
                                         self.builder.build_alloca(self.context.f64_type(), &name)
@@ -435,7 +464,6 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                                 self.builder.build_store(val_ptr, value);
                             }
                             Value::Bool(value) => {
-                                println!("bool value: {:?}", value);
                                 let val_ptr = match val_ptr_result {
                                     None => {
                                         self.builder.build_alloca(self.context.bool_type(), &name)
@@ -491,8 +519,6 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                 let i32_type = self.context.i32_type();
                 let f64_type = self.context.f64_type();
                 let bool_type = self.context.bool_type();
-
-                println!("rtn: {}, args: {:?}", return_type, args);
 
                 let fn_type = match return_type {
                     TypeLiteral::Int => i32_type.fn_type(
@@ -639,3 +665,4 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
         }
     }
 }
+// weekendvibes

@@ -37,6 +37,8 @@ pub enum Node {
     Int(i32),
     Float(f64),
     Bool(bool),
+    Type(TypeLiteral),
+    Cast(TypeLiteral, Box<Node>),
     Identifier(String),
     Unary(UnaryOp, Box<Node>),
     Binary(Box<Node>, BinaryOp, Box<Node>),
@@ -56,13 +58,15 @@ impl fmt::Display for Node {
             Node::Int(value) => write!(f, "{}", value),
             Node::Float(value) => write!(f, "{}f", value),
             Node::Bool(value) => write!(f, "{}", value),
+            Node::Type(literal) => write!(f, "{}", literal),
+            Node::Cast(literal, node) => write!(f, "{}({})", literal, node),
             Node::Identifier(name) => write!(f, "{}", name),
             Node::Unary(op, node) => {
                 use UnaryOp::*;
                 match op {
                     Pos => write!(f, "(+{})", *node),
                     Neg => write!(f, "(-{})", *node),
-                    Not => write!(f, "not {}", *node),
+                    Not => write!(f, "(not {})", *node),
                 }
             }
             Node::Binary(left, op, right) => {

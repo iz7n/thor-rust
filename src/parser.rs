@@ -240,14 +240,23 @@ impl Parser {
             LParen => {
                 self.advance();
 
-                let name = match result {
-                    Node::Identifier(name) => name,
-                    _ => panic!("expected identifier"),
-                };
+                match result {
+                    Node::Identifier(name) => {
+                        let args = self.list(RParen);
+                        Node::Call(name, args)
+                    }
+                    Node::Type(literal) => {
+                        let expr = self.expr();
 
-                let args = self.list(RParen);
+                        if self.token != RParen {
+                            panic!("expected ')'");
+                        }
+                        self.advance();
 
-                Node::Call(name, args)
+                        Node::Cast(literal, Box::new(expr))
+                    }
+                    _ => panic!("expected identifier or type"),
+                }
             }
             _ => result,
         }
@@ -266,6 +275,10 @@ impl Parser {
             Bool(value) => {
                 self.advance();
                 Node::Bool(value)
+            }
+            Type(literal) => {
+                self.advance();
+                Node::Type(literal)
             }
             Identifier(name) => {
                 self.advance();

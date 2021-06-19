@@ -85,13 +85,9 @@ fn compile(text: String, filename: &str, out_filename: &str, log: bool) {
     }
     codegen.module.verify().expect("Errors were encountered");
 
-    let object_filename = &format!("{}.o", out_filename);
-
     Target::initialize_all(&InitializationConfig::default());
-
     let triple = TargetMachine::get_default_triple();
     let target = Target::from_triple(&triple).expect("couldn't create target from target triple");
-
     let target_machine = target
         .create_target_machine(
             &triple,
@@ -102,7 +98,7 @@ fn compile(text: String, filename: &str, out_filename: &str, log: bool) {
             CodeModel::Default,
         )
         .expect("couldn't create target machine");
-
+    let object_filename = &format!("{}.o", out_filename);
     target_machine
         .write_to_file(codegen.module, FileType::Object, Path::new(object_filename))
         .expect("couldn't write module to file");
