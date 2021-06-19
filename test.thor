@@ -1,8 +1,7 @@
-fn add(a: float, b: float): float {
-    return a + b
-}
+x = 10
 
-a = 2.0
-b = 5
-x = add(a, float(b))
-print(x)
+ans = if x < 5: -1
+else if x < 8: 0
+else: 1
+
+print(ans)

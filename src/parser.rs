@@ -26,6 +26,11 @@ impl Parser {
         };
     }
 
+    fn back(&mut self) {
+        self.index -= 2;
+        self.advance();
+    }
+
     fn next_token(&mut self) -> Token {
         let next = self.tokens.get(self.index + 1);
         match next {
@@ -87,37 +92,31 @@ impl Parser {
     }
 
     fn expr(&mut self) -> Node {
-        match self.token.clone() {
-            Identifier(name) => match self.next_token() {
-                Eq => {
-                    self.advance();
-                    self.advance();
-                    Node::IdentifierOp(name, IdentifierOp::Eq, Box::new(self.or_expr()))
+        macro_rules! expr {
+            ($(($token:tt, $op:tt)),*) => {
+                match self.token.clone() {
+                    Identifier(name) => match self.next_token() {
+                        $(
+                            $token => {
+                                self.advance();
+                                self.advance();
+                                Node::IdentifierOp(name, IdentifierOp::$op, Box::new(self.or_expr()))
+                            }
+                        )*
+                        _ => self.or_expr(),
+                    },
+                    _ => self.or_expr(),
                 }
-                AddEq => {
-                    self.advance();
-                    self.advance();
-                    Node::IdentifierOp(name, IdentifierOp::Add, Box::new(self.or_expr()))
-                }
-                SubEq => {
-                    self.advance();
-                    self.advance();
-                    Node::IdentifierOp(name, IdentifierOp::Sub, Box::new(self.or_expr()))
-                }
-                MulEq => {
-                    self.advance();
-                    self.advance();
-                    Node::IdentifierOp(name, IdentifierOp::Mul, Box::new(self.or_expr()))
-                }
-                DivEq => {
-                    self.advance();
-                    self.advance();
-                    Node::IdentifierOp(name, IdentifierOp::Div, Box::new(self.or_expr()))
-                }
-                _ => self.or_expr(),
-            },
-            _ => self.or_expr(),
+            };
         }
+
+        expr!(
+            (Eq, Eq),
+            (AddEq, Add),
+            (SubEq, Sub),
+            (MulEq, Mul),
+            (DivEq, Div)
+        )
     }
 
     fn or_expr(&mut self) -> Node {
@@ -157,34 +156,21 @@ impl Parser {
     fn comp_expr(&mut self) -> Node {
         let result = self.arith_expr();
 
-        match self.token {
-            EqEq => {
-                self.advance();
-                Node::Binary(Box::new(result), BinaryOp::EqEq, Box::new(self.comp_expr()))
-            }
-            Neq => {
-                self.advance();
-                Node::Binary(Box::new(result), BinaryOp::Neq, Box::new(self.comp_expr()))
-            }
-            Lt => {
-                self.advance();
-                Node::Binary(Box::new(result), BinaryOp::Lt, Box::new(self.comp_expr()))
-            }
-            Lte => {
-                self.advance();
-                Node::Binary(Box::new(result), BinaryOp::Lte, Box::new(self.comp_expr()))
-            }
-            Gt => {
-                self.advance();
-                Node::Binary(Box::new(result), BinaryOp::Gt, Box::new(self.comp_expr()))
-            }
-            Gte => {
-                self.advance();
-                Node::Binary(Box::new(result), BinaryOp::Gte, Box::new(self.comp_expr()))
-            }
-
-            _ => result,
+        macro_rules! comp_expr {
+            ($($token:tt),*) => {
+                match self.token {
+                    $(
+                        $token => {
+                            self.advance();
+                            Node::Binary(Box::new(result), BinaryOp::$token, Box::new(self.comp_expr()))
+                        },
+                    )*
+                    _ => result,
+                }
+            };
         }
+
+        comp_expr!(EqEq, Neq, Lt, Lte, Gt, Gte)
     }
 
     fn arith_expr(&mut self) -> Node {
@@ -299,7 +285,7 @@ impl Parser {
             For => self.for_expr(),
             Fn => self.fn_expr(),
             EOF => Node::EOF,
-            _ => panic!("expected int, identifier, '(', 'if', 'for', or 'fn'"),
+            _ => panic!("expected int, float, bool, type, identifier, '(', 'if', 'for', or 'fn'"),
         }
     }
 
@@ -320,14 +306,15 @@ impl Parser {
             _ => panic!("{}", "expected ':' or '{'"),
         };
 
-        let node = Node::If(
-            Box::new(condition),
-            Box::new(body),
-            match self.token {
-                Else => Some(Box::new(self.else_expr())),
-                _ => None,
-            },
-        );
+        let mut else_case: Option<Box<Node>> = None;
+        let newlines = self.skip_newlines();
+        if self.token == Else {
+            else_case = Some(Box::new(self.else_expr()));
+        } else if newlines > 0 {
+            self.back();
+        }
+
+        let node = Node::If(Box::new(condition), Box::new(body), else_case);
         node
     }
 

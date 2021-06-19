@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
@@ -65,17 +64,9 @@ fn compile(text: String, filename: &str, out_filename: &str, log: bool) {
     }
 
     let context = Context::create();
-    let module = context.create_module("thor");
+    let module = context.create_module("main");
     let builder = context.create_builder();
-    let mut codegen = Codegen {
-        context: &context,
-        module: &module,
-        builder,
-        functions: HashMap::new(),
-        variables: HashMap::new(),
-    };
-
-    codegen.init(filename);
+    let mut codegen = Codegen::new(filename, &context, &module, builder);
     codegen.generate_llvm_ir(ast);
     if log {
         println!(
@@ -100,7 +91,11 @@ fn compile(text: String, filename: &str, out_filename: &str, log: bool) {
         .expect("couldn't create target machine");
     let object_filename = &format!("{}.o", out_filename);
     target_machine
-        .write_to_file(codegen.module, FileType::Object, Path::new(object_filename))
+        .write_to_file(
+            &codegen.module,
+            FileType::Object,
+            Path::new(object_filename),
+        )
         .expect("couldn't write module to file");
 
     let args = [object_filename, "-o", out_filename];

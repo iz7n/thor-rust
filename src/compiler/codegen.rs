@@ -21,15 +21,49 @@ pub struct Codegen<'a, 'ctx> {
     pub context: &'ctx Context,
     pub module: &'a Module<'ctx>,
     pub builder: Builder<'ctx>,
+    pub function: FunctionValue<'ctx>,
     pub functions: HashMap<String, (FunctionValue<'ctx>, TypeLiteral)>,
     pub variables: HashMap<String, (PointerValue<'ctx>, TypeLiteral)>,
 }
 
 impl<'a, 'ctx> Codegen<'a, 'ctx> {
-    pub fn init(&mut self, filename: &str) {
-        self.module.set_source_file_name(filename);
-        self.generate_main_fn();
-        self.add_printf();
+    pub fn new(
+        filename: &str,
+        context: &'ctx Context,
+        module: &'a Module<'ctx>,
+        builder: Builder<'ctx>,
+    ) -> Self {
+        module.set_source_file_name(filename);
+
+        let i32_type = context.i32_type();
+        let fn_type = i32_type.fn_type(&[BasicTypeEnum::IntType(i32_type)], false);
+        let function = module.add_function("main", fn_type, None);
+        let block = context.append_basic_block(function, "body");
+        builder.position_at_end(block);
+
+        let mut codegen = Self {
+            context: &context,
+            module: &module,
+            builder,
+            function,
+            functions: HashMap::new(),
+            variables: HashMap::new(),
+        };
+        codegen.add_printf();
+        codegen
+    }
+
+    pub fn create_child(&self, function: FunctionValue<'ctx>) -> Self {
+        let mut codegen = Self {
+            context: self.context,
+            module: self.module,
+            builder: self.context.create_builder(),
+            function,
+            functions: HashMap::new(),
+            variables: HashMap::new(),
+        };
+        codegen.add_printf();
+        codegen
     }
 
     pub fn generate_llvm_ir(&mut self, ast: Node) {
@@ -515,6 +549,96 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                     )),
                 }
             }
+            Node::If(condition, body, else_case) => {
+                let condition_value = match self.visit(*condition) {
+                    Value::Bool(value) => value,
+                    _ => panic!("if statements can only have a bool as their condition"),
+                };
+
+                let then_block = self.context.append_basic_block(self.function, "then");
+                match else_case {
+                    Some(else_case) => {
+                        let else_block = self.context.append_basic_block(self.function, "else");
+                        let end_block = self.context.append_basic_block(self.function, "end");
+
+                        self.builder.build_conditional_branch(
+                            condition_value,
+                            then_block,
+                            else_block,
+                        );
+
+                        // Then
+                        self.builder.position_at_end(then_block);
+                        let then_value = self.visit(*body);
+                        self.builder.build_unconditional_branch(end_block);
+
+                        let then_block = self.builder.get_insert_block().unwrap();
+
+                        // Else
+                        self.builder.position_at_end(else_block);
+                        let else_value = self.visit(*else_case);
+                        self.builder.build_unconditional_branch(end_block);
+
+                        let else_block = self.builder.get_insert_block().unwrap();
+
+                        self.builder.position_at_end(end_block);
+
+                        let phi = self.builder.build_phi(
+                            match then_value {
+                                Value::Int(_) => BasicTypeEnum::IntType(self.context.i32_type()),
+                                Value::Float(_) => {
+                                    BasicTypeEnum::FloatType(self.context.f64_type())
+                                }
+                                Value::Bool(_) => BasicTypeEnum::IntType(self.context.bool_type()),
+                            },
+                            "phi",
+                        );
+                        phi.add_incoming(&[
+                            (
+                                &match then_value {
+                                    Value::Int(value) => BasicValueEnum::IntValue(value),
+                                    Value::Float(value) => BasicValueEnum::FloatValue(value),
+                                    Value::Bool(value) => BasicValueEnum::IntValue(value),
+                                },
+                                then_block,
+                            ),
+                            (
+                                &match else_value {
+                                    Value::Int(value) => BasicValueEnum::IntValue(value),
+                                    Value::Float(value) => BasicValueEnum::FloatValue(value),
+                                    Value::Bool(value) => BasicValueEnum::IntValue(value),
+                                },
+                                else_block,
+                            ),
+                        ]);
+
+                        let phi_value = phi.as_basic_value();
+                        match then_value {
+                            Value::Int(_) => Value::Int(phi_value.into_int_value()),
+                            Value::Float(_) => Value::Float(phi_value.into_float_value()),
+                            Value::Bool(_) => Value::Bool(phi_value.into_int_value()),
+                        }
+                    }
+                    None => {
+                        let end_block = self.context.append_basic_block(self.function, "end");
+
+                        self.builder.build_conditional_branch(
+                            condition_value,
+                            then_block,
+                            end_block,
+                        );
+
+                        // Then
+                        self.builder.position_at_end(then_block);
+                        self.visit(*body);
+                        self.builder.build_unconditional_branch(end_block);
+
+                        self.builder.position_at_end(end_block);
+
+                        Value::Int(self.context.i32_type().const_zero())
+                    }
+                }
+            }
             Node::Fn(name, args, return_type, body) => {
                 let i32_type = self.context.i32_type();
                 let f64_type = self.context.f64_type();
@@ -557,42 +681,40 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                 };
                 let function = self.module.add_function(&name, fn_type, None);
                 let block = self.context.append_basic_block(function, "body");
-                let builder = self.context.create_builder();
-                builder.position_at_end(block);
 
-                let mut variables: HashMap<String, (PointerValue<'ctx>, TypeLiteral)> =
-                    HashMap::new();
+                let mut codegen = self.create_child(self.function);
+                codegen.builder.position_at_end(block);
                 args.iter()
                     .enumerate()
                     .for_each(|(i, (arg_name, literal))| {
                         let value = function.get_nth_param(i as u32).unwrap();
                         match literal {
                             TypeLiteral::Int => {
-                                let val_ptr = builder.build_alloca(i32_type, &arg_name);
-                                variables.insert(arg_name.clone(), (val_ptr, TypeLiteral::Int));
-                                builder.build_store(val_ptr, value.into_int_value());
+                                let val_ptr = codegen.builder.build_alloca(i32_type, &arg_name);
+                                codegen
+                                    .variables
+                                    .insert(arg_name.clone(), (val_ptr, TypeLiteral::Int));
+                                codegen.builder.build_store(val_ptr, value.into_int_value());
                             }
                             TypeLiteral::Float => {
-                                let val_ptr = builder.build_alloca(f64_type, &arg_name);
-                                variables.insert(arg_name.clone(), (val_ptr, TypeLiteral::Float));
-                                builder.build_store(val_ptr, value.into_float_value());
+                                let val_ptr = codegen.builder.build_alloca(f64_type, &arg_name);
+                                codegen
+                                    .variables
+                                    .insert(arg_name.clone(), (val_ptr, TypeLiteral::Float));
+                                codegen
+                                    .builder
+                                    .build_store(val_ptr, value.into_float_value());
                             }
                             TypeLiteral::Bool => {
-                                let val_ptr = builder.build_alloca(bool_type, &arg_name);
-                                variables.insert(arg_name.clone(), (val_ptr, TypeLiteral::Bool));
-                                builder.build_store(val_ptr, value.into_int_value());
+                                let val_ptr = codegen.builder.build_alloca(bool_type, &arg_name);
+                                codegen
+                                    .variables
+                                    .insert(arg_name.clone(), (val_ptr, TypeLiteral::Bool));
+                                codegen.builder.build_store(val_ptr, value.into_int_value());
                             }
                         };
                     });
 
-                let mut codegen = Self {
-                    context: self.context,
-                    module: self.module,
-                    builder,
-                    functions: HashMap::new(),
-                    variables,
-                };
-                codegen.add_printf();
                 codegen.visit(*body);
 
                 self.functions.insert(name, (function, return_type));
@@ -656,10 +778,11 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                 }
             }
             Node::Statements(nodes) => {
+                let mut rtn_value = Value::Int(self.context.i32_type().const_zero());
                 for node in nodes {
-                    self.visit(node);
+                    rtn_value = self.visit(node);
                 }
-                Value::Int(self.context.i32_type().const_zero())
+                rtn_value
             }
             _ => panic!("Unknown node: {:?}", node),
         }

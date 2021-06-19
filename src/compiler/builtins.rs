@@ -3,14 +3,6 @@ use inkwell::{module::Linkage, types::BasicTypeEnum, values::BasicValueEnum};
 use crate::{compiler::Codegen, TypeLiteral};
 
 impl<'a, 'ctx> Codegen<'a, 'ctx> {
-    pub fn generate_main_fn(&self) {
-        let i32_type = self.context.i32_type();
-        let main_fn_type = i32_type.fn_type(&[BasicTypeEnum::IntType(i32_type)], false);
-        let main = self.module.add_function("main", main_fn_type, None);
-        let block = self.context.append_basic_block(main, "entry");
-        self.builder.position_at_end(block);
-    }
-
     pub fn add_printf(&mut self) {
         let i32_type = self.context.i32_type();
         let str_type = self
