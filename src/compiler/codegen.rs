@@ -217,6 +217,12 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                             }
                             _ => unimplemented!(),
                         },
+                        Value::Str(l) => match r_value {
+                            Value::Str(r) => {
+                                Value::Int(self.builder.build_ptr_diff(l, r, "ptr_diff"))
+                            }
+                            _ => unimplemented!(),
+                        },
                         _ => unimplemented!(),
                     },
                     Sub => match l_value {
