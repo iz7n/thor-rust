@@ -262,6 +262,10 @@ impl Parser {
                 self.advance();
                 Node::Bool(value)
             }
+            Str(value) => {
+                self.advance();
+                Node::Str(value)
+            }
             Type(literal) => {
                 self.advance();
                 Node::Type(literal)

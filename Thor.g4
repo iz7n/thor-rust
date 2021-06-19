@@ -29,6 +29,7 @@ atom:
 	INT
 	| FLOAT
 	| BOOLEAN
+	| STRING
 	| IDENTIFIER
 	| '(' expr ')'
 	| if_expr
@@ -52,5 +53,6 @@ block: '{' statements '}';
 INT: [0-9]+;
 FLOAT: [0-9]+ '.' [0-9]*;
 BOOLEAN: 'true' | 'false';
+STRING: '"' .* '"';
 TYPE: 'int' | 'float' | 'bool';
 IDENTIFIER: [a-zA-Z] [a-zA-Z0-9_]*;

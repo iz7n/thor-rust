@@ -5,6 +5,7 @@ pub enum TypeLiteral {
     Int,
     Float,
     Bool,
+    Str,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -12,6 +13,7 @@ pub enum Token {
     Int(i32),
     Float(f64),
     Bool(bool),
+    Str(String),
     Type(TypeLiteral),
     Identifier(String),
     Eq,
@@ -55,6 +57,7 @@ impl fmt::Display for TypeLiteral {
             Int => write!(f, "int"),
             Float => write!(f, "float"),
             Bool => write!(f, "bool"),
+            Str => write!(f, "str"),
         }
     }
 }
@@ -66,6 +69,7 @@ impl fmt::Display for Token {
             Int(value) => write!(f, "{}", value),
             Float(value) => write!(f, "{}f", value),
             Bool(value) => write!(f, "{}", value),
+            Str(value) => write!(f, "\"{}\"", value),
             Type(literal) => write!(f, "{}", literal),
             Identifier(name) => write!(f, "{}", name),
             Eq => write!(f, "'='"),

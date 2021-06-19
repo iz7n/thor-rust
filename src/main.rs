@@ -68,6 +68,10 @@ fn compile(text: String, filename: &str, out_filename: &str, log: bool) {
     let builder = context.create_builder();
     let mut codegen = Codegen::new(filename, &context, &module, builder);
     codegen.generate_llvm_ir(ast);
+    codegen
+        .module
+        .print_to_file(format!("{}.ll", out_filename))
+        .unwrap();
     if log {
         println!(
             "LLVM IR: {}",
@@ -84,7 +88,7 @@ fn compile(text: String, filename: &str, out_filename: &str, log: bool) {
             &triple,
             "generic",
             "",
-            OptimizationLevel::Aggressive,
+            OptimizationLevel::None,
             RelocMode::Default,
             CodeModel::Default,
         )

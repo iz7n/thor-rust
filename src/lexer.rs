@@ -42,6 +42,7 @@ impl Lexer {
             let token = match self.current_char {
                 ' ' | '\t' | '\r' => self.advance(),
                 '0'..='9' => self.number(),
+                '"' => self.string(),
                 'a'..='z' | 'A'..='Z' | '_' | 'Α'..='ω' | '∞' => self.word(),
                 '=' => {
                     self.advance();
@@ -171,6 +172,36 @@ impl Lexer {
         }
     }
 
+    fn string(&mut self) -> Token {
+        self.advance();
+        let mut string = String::new();
+        let mut escape = false;
+
+        while self.current_char != '"' {
+            if self.current_char == '\\' {
+                escape = true;
+                self.advance();
+                continue;
+            }
+            string.push(if escape {
+                escape = false;
+                match self.current_char {
+                    'n' => '\n',
+                    't' => '\t',
+                    'r' => '\r',
+                    '\\' => '\\',
+                    c => c,
+                }
+            } else {
+                self.current_char
+            });
+            self.advance();
+        }
+        self.advance();
+
+        Str(string)
+    }
+
     fn word(&mut self) -> Token {
         let mut word: String = self.current_char.to_string();
         self.advance();
@@ -191,6 +222,7 @@ impl Lexer {
             "int" => Type(TypeLiteral::Int),
             "float" => Type(TypeLiteral::Float),
             "bool" => Type(TypeLiteral::Bool),
+            "str" => Type(TypeLiteral::Str),
             "not" => Not,
             "and" => And,
             "or" => Or,
