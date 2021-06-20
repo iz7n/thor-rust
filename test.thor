@@ -1,3 +1,7 @@
-msg = "hello world!"
-msg2 = "hi again."
-print(msg + msg2)
+fn say(msg: str): str {
+    print(msg)
+    return msg
+}
+
+msg = say("hello world")
+print(msg)

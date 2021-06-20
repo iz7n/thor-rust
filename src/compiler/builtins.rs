@@ -12,16 +12,16 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
             .context
             .i8_type()
             .ptr_type(inkwell::AddressSpace::Generic);
-        let printf_args_type = vec![BasicTypeEnum::PointerType(str_type)];
+        let printf_args_type = &[BasicTypeEnum::PointerType(str_type)];
 
-        let printf_type = i32_type.fn_type(printf_args_type.as_slice(), true);
+        let printf_type = i32_type.fn_type(printf_args_type, true);
 
         let printf_fn = self
             .module
             .add_function("printf", printf_type, Some(Linkage::External));
 
-        self.functions
-            .insert("print".to_string(), (printf_fn, TypeLiteral::Int));
+        self.scope
+            .add_function("print".to_string(), printf_fn, TypeLiteral::Int);
     }
 
     pub fn generate_printf_format_string(

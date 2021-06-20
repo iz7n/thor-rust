@@ -1,30 +1,23 @@
-use std::collections::HashMap;
-
 use inkwell::{
     builder::Builder,
     context::Context,
     module::Module,
     types::BasicTypeEnum,
-    values::{BasicValueEnum, FloatValue, FunctionValue, IntValue, PointerValue},
+    values::{BasicValueEnum, FunctionValue},
     AddressSpace, FloatPredicate, IntPredicate,
 };
 
-use crate::{BinaryOp, IdentifierOp, Node, TypeLiteral, UnaryOp};
-
-pub enum Value<'ctx> {
-    Int(IntValue<'ctx>),
-    Float(FloatValue<'ctx>),
-    Bool(IntValue<'ctx>),
-    Str(PointerValue<'ctx>),
-}
+use crate::{
+    compiler::{Scope, Value},
+    BinaryOp, IdentifierOp, Node, TypeLiteral, UnaryOp,
+};
 
 pub struct Codegen<'a, 'ctx> {
     pub context: &'ctx Context,
     pub module: &'a Module<'ctx>,
     pub builder: Builder<'ctx>,
     pub function: FunctionValue<'ctx>,
-    pub functions: HashMap<String, (FunctionValue<'ctx>, TypeLiteral)>,
-    pub variables: HashMap<String, (PointerValue<'ctx>, TypeLiteral)>,
+    pub scope: Scope<'a, 'ctx>,
 }
 
 impl<'a, 'ctx> Codegen<'a, 'ctx> {
@@ -55,24 +48,21 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
             module: &module,
             builder,
             function,
-            functions: HashMap::new(),
-            variables: HashMap::new(),
+            scope: Scope::new(None),
         };
         codegen.add_printf();
         codegen
     }
 
-    pub fn create_child(&self, function: FunctionValue<'ctx>) -> Self {
-        let mut codegen = Self {
+    pub fn create_child(&'a self, function: FunctionValue<'ctx>) -> Self {
+        let builder = self.context.create_builder();
+        Self {
             context: self.context,
             module: self.module,
-            builder: self.context.create_builder(),
+            builder,
             function,
-            functions: HashMap::new(),
-            variables: HashMap::new(),
-        };
-        codegen.add_printf();
-        codegen
+            scope: Scope::new(Some(&self.scope)),
+        }
     }
 
     pub fn generate_llvm_ir(&mut self, ast: Node) {
@@ -90,14 +80,11 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                     .bool_type()
                     .const_int(if value { 1 } else { 0 }, false),
             ),
-            Node::Str(value) => {
-                let string = self
-                    .builder
+            Node::Str(value) => Value::Str(
+                self.builder
                     .build_global_string_ptr(&value, "str")
-                    .as_pointer_value();
-                println!("STR: {:?}", string);
-                Value::Str(string)
-            }
+                    .as_pointer_value(),
+            ),
             Node::Cast(literal, node) => {
                 let value = self.visit(*node);
 
@@ -136,24 +123,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                     }),
                 }
             }
-            Node::Identifier(name) => match self.variables.get(name.as_str()) {
-                Some((ptr, literal)) => match literal {
-                    TypeLiteral::Int => {
-                        let value = self.builder.build_load(*ptr, &name);
-                        Value::Int(value.into_int_value())
-                    }
-                    TypeLiteral::Float => {
-                        let value = self.builder.build_load(*ptr, &name);
-                        Value::Float(value.into_float_value())
-                    }
-                    TypeLiteral::Bool => {
-                        let value = self.builder.build_load(*ptr, &name);
-                        Value::Bool(value.into_int_value())
-                    }
-                    TypeLiteral::Str => Value::Str(*ptr),
-                },
-                None => panic!("{} is not defined", name),
-            },
+            Node::Identifier(name) => self.scope.get(&name, &self.builder),
             Node::Unary(op, node) => {
                 let value = self.visit(*node);
 
@@ -214,12 +184,6 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                             )),
                             Value::Float(r) => {
                                 Value::Float(self.builder.build_float_add(l, r, "add"))
-                            }
-                            _ => unimplemented!(),
-                        },
-                        Value::Str(l) => match r_value {
-                            Value::Str(r) => {
-                                Value::Int(self.builder.build_ptr_diff(l, r, "ptr_diff"))
                             }
                             _ => unimplemented!(),
                         },
@@ -514,46 +478,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
 
                 use IdentifierOp::*;
                 match op {
-                    Eq => {
-                        let val_ptr_result = self.variables.get(name.as_str());
-                        match value {
-                            Value::Int(value) => {
-                                let val_ptr = match val_ptr_result {
-                                    None => {
-                                        self.builder.build_alloca(self.context.i32_type(), &name)
-                                    }
-                                    Some((ptr, _)) => *ptr,
-                                };
-                                self.variables.insert(name, (val_ptr, TypeLiteral::Int));
-                                self.builder.build_store(val_ptr, value);
-                            }
-                            Value::Float(value) => {
-                                let val_ptr = match val_ptr_result {
-                                    None => {
-                                        self.builder.build_alloca(self.context.f64_type(), &name)
-                                    }
-                                    Some((ptr, _)) => *ptr,
-                                };
-                                self.variables.insert(name, (val_ptr, TypeLiteral::Float));
-                                self.builder.build_store(val_ptr, value);
-                            }
-                            Value::Bool(value) => {
-                                let val_ptr = match val_ptr_result {
-                                    None => {
-                                        self.builder.build_alloca(self.context.bool_type(), &name)
-                                    }
-                                    Some((ptr, _)) => *ptr,
-                                };
-                                self.variables.insert(name, (val_ptr, TypeLiteral::Bool));
-                                self.builder.build_store(val_ptr, value);
-                            }
-                            Value::Str(value) => {
-                                self.variables.insert(name, (value, TypeLiteral::Str));
-                            }
-                        };
-
-                        value
-                    }
+                    Eq => self.scope.set(name, value, &self.context, &self.builder),
                     Add => self.visit(Node::IdentifierOp(
                         name.clone(),
                         Eq,
@@ -692,7 +617,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                 let i32_type = self.context.i32_type();
                 let f64_type = self.context.f64_type();
                 let bool_type = self.context.bool_type();
-                let str_type = self.context.const_string(&[], false).get_type();
+                let str_type = self.context.i8_type().ptr_type(AddressSpace::Generic);
 
                 let fn_type = match return_type {
                     TypeLiteral::Int => i32_type.fn_type(
@@ -701,7 +626,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                                 TypeLiteral::Int => BasicTypeEnum::IntType(i32_type),
                                 TypeLiteral::Float => BasicTypeEnum::FloatType(f64_type),
                                 TypeLiteral::Bool => BasicTypeEnum::IntType(bool_type),
-                                TypeLiteral::Str => BasicTypeEnum::VectorType(str_type),
+                                TypeLiteral::Str => BasicTypeEnum::PointerType(str_type),
                             })
                             .collect::<Vec<BasicTypeEnum>>()
                             .as_slice(),
@@ -713,7 +638,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                                 TypeLiteral::Int => BasicTypeEnum::IntType(i32_type),
                                 TypeLiteral::Float => BasicTypeEnum::FloatType(f64_type),
                                 TypeLiteral::Bool => BasicTypeEnum::IntType(bool_type),
-                                TypeLiteral::Str => BasicTypeEnum::VectorType(str_type),
+                                TypeLiteral::Str => BasicTypeEnum::PointerType(str_type),
                             })
                             .collect::<Vec<BasicTypeEnum>>()
                             .as_slice(),
@@ -725,7 +650,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                                 TypeLiteral::Int => BasicTypeEnum::IntType(i32_type),
                                 TypeLiteral::Float => BasicTypeEnum::FloatType(f64_type),
                                 TypeLiteral::Bool => BasicTypeEnum::IntType(bool_type),
-                                TypeLiteral::Str => BasicTypeEnum::VectorType(str_type),
+                                TypeLiteral::Str => BasicTypeEnum::PointerType(str_type),
                             })
                             .collect::<Vec<BasicTypeEnum>>()
                             .as_slice(),
@@ -737,7 +662,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                                 TypeLiteral::Int => BasicTypeEnum::IntType(i32_type),
                                 TypeLiteral::Float => BasicTypeEnum::FloatType(f64_type),
                                 TypeLiteral::Bool => BasicTypeEnum::IntType(bool_type),
-                                TypeLiteral::Str => BasicTypeEnum::VectorType(str_type),
+                                TypeLiteral::Str => BasicTypeEnum::PointerType(str_type),
                             })
                             .collect::<Vec<BasicTypeEnum>>()
                             .as_slice(),
@@ -752,46 +677,39 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                 args.iter()
                     .enumerate()
                     .for_each(|(i, (arg_name, literal))| {
+                        let arg_name = arg_name.clone();
                         let value = function.get_nth_param(i as u32).unwrap();
                         match literal {
-                            TypeLiteral::Int => {
-                                let val_ptr = codegen.builder.build_alloca(i32_type, &arg_name);
-                                codegen
-                                    .variables
-                                    .insert(arg_name.clone(), (val_ptr, TypeLiteral::Int));
-                                codegen.builder.build_store(val_ptr, value.into_int_value());
-                            }
-                            TypeLiteral::Float => {
-                                let val_ptr = codegen.builder.build_alloca(f64_type, &arg_name);
-                                codegen
-                                    .variables
-                                    .insert(arg_name.clone(), (val_ptr, TypeLiteral::Float));
-                                codegen
-                                    .builder
-                                    .build_store(val_ptr, value.into_float_value());
-                            }
-                            TypeLiteral::Bool => {
-                                let val_ptr = codegen.builder.build_alloca(bool_type, &arg_name);
-                                codegen
-                                    .variables
-                                    .insert(arg_name.clone(), (val_ptr, TypeLiteral::Bool));
-                                codegen.builder.build_store(val_ptr, value.into_int_value());
-                            }
-                            TypeLiteral::Str => {
-                                let val_ptr = codegen.builder.build_alloca(bool_type, &arg_name);
-                                codegen
-                                    .variables
-                                    .insert(arg_name.clone(), (val_ptr, TypeLiteral::Str));
-                                codegen
-                                    .builder
-                                    .build_store(val_ptr, value.into_vector_value());
-                            }
+                            TypeLiteral::Int => codegen.scope.set(
+                                arg_name,
+                                Value::Int(value.into_int_value()),
+                                &self.context,
+                                &self.builder,
+                            ),
+                            TypeLiteral::Float => codegen.scope.set(
+                                arg_name,
+                                Value::Float(value.into_float_value()),
+                                &self.context,
+                                &self.builder,
+                            ),
+                            TypeLiteral::Bool => codegen.scope.set(
+                                arg_name,
+                                Value::Bool(value.into_int_value()),
+                                &self.context,
+                                &self.builder,
+                            ),
+                            TypeLiteral::Str => codegen.scope.set(
+                                arg_name,
+                                Value::Str(value.into_pointer_value()),
+                                &self.context,
+                                &self.builder,
+                            ),
                         };
                     });
 
                 codegen.visit(*body);
 
-                self.functions.insert(name, (function, return_type));
+                self.scope.add_function(name, function, return_type);
 
                 Value::Int(i32_type.const_zero())
             }
@@ -811,9 +729,9 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                     compiled_args.push(self.visit(arg));
                 }
 
-                let fn_value = self.functions.get(&name).clone();
+                let fn_value = self.scope.get_function(&name);
                 match fn_value {
-                    Some((function, return_type)) => {
+                    (function, return_type) => {
                         let format_string = self.generate_printf_format_string(&compiled_args);
 
                         let mut argsv: Vec<BasicValueEnum<'ctx>> = vec![];
@@ -852,7 +770,6 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                             None => panic!("Invalid call to {}", name),
                         }
                     }
-                    None => panic!("function {} is not defined", name),
                 }
             }
             Node::Statements(nodes) => {

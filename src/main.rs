@@ -15,7 +15,7 @@ mod node;
 mod parser;
 mod token;
 
-pub use compiler::*;
+use compiler::Codegen;
 pub use lexer::Lexer;
 pub use node::{BinaryOp, IdentifierOp, Node, UnaryOp};
 pub use parser::Parser;
@@ -68,17 +68,11 @@ fn compile(text: String, filename: &str, out_filename: &str, log: bool) {
     let builder = context.create_builder();
     let mut codegen = Codegen::new(filename, &context, &module, builder);
     codegen.generate_llvm_ir(ast);
+    codegen.module.verify().expect("Errors were encountered");
     codegen
         .module
         .print_to_file(format!("{}.ll", out_filename))
         .unwrap();
-    if log {
-        println!(
-            "LLVM IR: {}",
-            codegen.module.print_to_string().to_str().unwrap()
-        );
-    }
-    codegen.module.verify().expect("Errors were encountered");
 
     Target::initialize_all(&InitializationConfig::default());
     let triple = TargetMachine::get_default_triple();
