@@ -37,6 +37,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                 Value::Bool(_) => "%i ",
                 Value::Str(_) => "%s ",
                 Value::Char(_) => "%c ",
+                Value::Void => "%p ",
             };
 
             format_string.push_str(format_arg);

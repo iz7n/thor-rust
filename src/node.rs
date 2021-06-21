@@ -114,7 +114,7 @@ impl fmt::Display for Node {
             Node::Fn(name, args, return_type, body) => {
                 write!(
                     f,
-                    "fn {} ({}) -> {}: {}",
+                    "fn {} ({}): {} -> {}",
                     name,
                     args.iter()
                         .map(|(name, ty)| format!("{}: {}", name, ty))

@@ -466,16 +466,19 @@ impl Parser {
         }
         self.advance();
 
-        if self.token != Colon {
-            panic!("expected ':'");
-        }
-        self.advance();
-
-        let return_type = match &self.token {
-            Type(literal) => literal.clone(),
-            _ => panic!("expected type"),
+        let return_type = match self.token {
+            Colon => {
+                self.advance();
+                match self.token.clone() {
+                    Type(literal) => {
+                        self.advance();
+                        literal
+                    }
+                    _ => panic!("expected type"),
+                }
+            }
+            _ => TypeLiteral::Void,
         };
-        self.advance();
 
         let body = match self.token {
             LBrace => self.block(),

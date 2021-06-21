@@ -5,7 +5,7 @@ statements: '\n'* statement ('\n'+ statement)* '\n'*;
 statement: 'return'? expr;
 
 expr:
-	| ( IDENTIFIER (('+' | '-' | '*' | '/')? '=') expr)
+	| (IDENTIFIER (('+' | '-' | '*' | '/')? '=') expr)
 	| or_expr;
 
 or_expr: and_expr ('or' or_expr)*;
@@ -35,7 +35,8 @@ atom:
 	| if_expr
 	| while_expr
 	| for_expr
-	| fn_expr;
+	| fn_expr
+	| atom '[' INT ']';
 
 if_expr: 'if' expr (':' statement | block);
 
@@ -48,7 +49,7 @@ for_expr: 'for' IDENTIFIER 'in' expr (':' statement | block);
 fn_expr: (
 		'fn' IDENTIFIER '(' (IDENTIFIER ':' TYPE)? (
 			',' IDENTIFIER ':' TYPE
-		)* ')' ('->' statement | block)
+		)* ')' (':' TYPE)? block
 	);
 
 block: '{' statements '}';
@@ -56,6 +57,6 @@ block: '{' statements '}';
 INT: [0-9]+;
 FLOAT: [0-9]+ '.' [0-9]*;
 BOOLEAN: 'true' | 'false';
-STRING: '"' .* '"';
-TYPE: 'int' | 'float' | 'bool';
+STRING: '"' .*? '"';
+TYPE: 'int' | 'float' | 'bool' | 'str' | 'char';
 IDENTIFIER: [a-zA-Z] [a-zA-Z0-9_]*;

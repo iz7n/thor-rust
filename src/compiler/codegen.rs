@@ -126,6 +126,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                         Value::Char(value) => value,
                         _ => unimplemented!(),
                     }),
+                    TypeLiteral::Void => panic!("can't cast to a void type"),
                 }
             }
             Node::Identifier(name) => self.scope.get(&name, &self.builder),
@@ -592,6 +593,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                                     self.context.const_string(&[], false).get_type(),
                                 ),
                                 Value::Char(_) => BasicTypeEnum::IntType(self.context.i8_type()),
+                                Value::Void => panic!("void isn't a valid type"),
                             },
                             "phi",
                         );
@@ -603,6 +605,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                                     Value::Bool(value) => BasicValueEnum::IntValue(value),
                                     Value::Str(value) => BasicValueEnum::PointerValue(value),
                                     Value::Char(value) => BasicValueEnum::IntValue(value),
+                                    Value::Void => panic!("void isn't a valid type"),
                                 },
                                 then_block,
                             ),
@@ -613,6 +616,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                                     Value::Bool(value) => BasicValueEnum::IntValue(value),
                                     Value::Str(value) => BasicValueEnum::PointerValue(value),
                                     Value::Char(value) => BasicValueEnum::IntValue(value),
+                                    Value::Void => panic!("void isn't a valid type"),
                                 },
                                 else_block,
                             ),
@@ -625,6 +629,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                             Value::Bool(_) => Value::Bool(phi_value.into_int_value()),
                             Value::Str(_) => Value::Str(phi_value.into_pointer_value()),
                             Value::Char(_) => Value::Char(phi_value.into_int_value()),
+                            Value::Void => panic!("void isn't a valid type"),
                         }
                     }
                     None => {
@@ -653,74 +658,39 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                 let bool_type = self.context.bool_type();
                 let str_type = self.context.i8_type().ptr_type(AddressSpace::Generic);
                 let char_type = self.context.i8_type();
+                let void_type = self.context.void_type();
 
-                let fn_type = match return_type {
-                    TypeLiteral::Int => i32_type.fn_type(
-                        args.iter()
-                            .map(|(_, literal)| match literal {
-                                TypeLiteral::Int => BasicTypeEnum::IntType(i32_type),
-                                TypeLiteral::Float => BasicTypeEnum::FloatType(f64_type),
-                                TypeLiteral::Bool => BasicTypeEnum::IntType(bool_type),
-                                TypeLiteral::Str => BasicTypeEnum::PointerType(str_type),
-                                TypeLiteral::Char => BasicTypeEnum::IntType(char_type),
-                            })
-                            .collect::<Vec<BasicTypeEnum>>()
-                            .as_slice(),
-                        false,
-                    ),
-                    TypeLiteral::Float => f64_type.fn_type(
-                        args.iter()
-                            .map(|(_, literal)| match literal {
-                                TypeLiteral::Int => BasicTypeEnum::IntType(i32_type),
-                                TypeLiteral::Float => BasicTypeEnum::FloatType(f64_type),
-                                TypeLiteral::Bool => BasicTypeEnum::IntType(bool_type),
-                                TypeLiteral::Str => BasicTypeEnum::PointerType(str_type),
-                                TypeLiteral::Char => BasicTypeEnum::IntType(char_type),
-                            })
-                            .collect::<Vec<BasicTypeEnum>>()
-                            .as_slice(),
-                        false,
-                    ),
-                    TypeLiteral::Bool => bool_type.fn_type(
-                        args.iter()
-                            .map(|(_, literal)| match literal {
-                                TypeLiteral::Int => BasicTypeEnum::IntType(i32_type),
-                                TypeLiteral::Float => BasicTypeEnum::FloatType(f64_type),
-                                TypeLiteral::Bool => BasicTypeEnum::IntType(bool_type),
-                                TypeLiteral::Str => BasicTypeEnum::PointerType(str_type),
-                                TypeLiteral::Char => BasicTypeEnum::IntType(char_type),
-                            })
-                            .collect::<Vec<BasicTypeEnum>>()
-                            .as_slice(),
-                        false,
-                    ),
-                    TypeLiteral::Str => str_type.fn_type(
-                        args.iter()
-                            .map(|(_, literal)| match literal {
-                                TypeLiteral::Int => BasicTypeEnum::IntType(i32_type),
-                                TypeLiteral::Float => BasicTypeEnum::FloatType(f64_type),
-                                TypeLiteral::Bool => BasicTypeEnum::IntType(bool_type),
-                                TypeLiteral::Str => BasicTypeEnum::PointerType(str_type),
-                                TypeLiteral::Char => BasicTypeEnum::IntType(char_type),
-                            })
-                            .collect::<Vec<BasicTypeEnum>>()
-                            .as_slice(),
-                        false,
-                    ),
-                    TypeLiteral::Char => char_type.fn_type(
-                        args.iter()
-                            .map(|(_, literal)| match literal {
-                                TypeLiteral::Int => BasicTypeEnum::IntType(i32_type),
-                                TypeLiteral::Float => BasicTypeEnum::FloatType(f64_type),
-                                TypeLiteral::Bool => BasicTypeEnum::IntType(bool_type),
-                                TypeLiteral::Str => BasicTypeEnum::PointerType(str_type),
-                                TypeLiteral::Char => BasicTypeEnum::IntType(char_type),
-                            })
-                            .collect::<Vec<BasicTypeEnum>>()
-                            .as_slice(),
-                        false,
-                    ),
-                };
+                macro_rules! make_args {
+                    ($(($literal:tt,$type:expr)),*) => {
+                        match return_type {
+                            $(
+                                TypeLiteral::$literal => $type.fn_type(
+                                    args.iter()
+                                        .map(|(_, literal)| match literal {
+                                            TypeLiteral::Int => BasicTypeEnum::IntType(i32_type),
+                                            TypeLiteral::Float => BasicTypeEnum::FloatType(f64_type),
+                                            TypeLiteral::Bool => BasicTypeEnum::IntType(bool_type),
+                                            TypeLiteral::Str => BasicTypeEnum::PointerType(str_type),
+                                            TypeLiteral::Char => BasicTypeEnum::IntType(char_type),
+                                            TypeLiteral::Void => panic!("void isn't a valid argument type"),
+                                        })
+                                        .collect::<Vec<BasicTypeEnum>>()
+                                        .as_slice(),
+                                    false,
+                                ),
+                            )*
+                        }
+                    };
+                }
+
+                let fn_type = make_args!(
+                    (Int, i32_type),
+                    (Float, f64_type),
+                    (Bool, bool_type),
+                    (Str, str_type),
+                    (Char, char_type),
+                    (Void, void_type)
+                );
                 let function = self.module.add_function(&name, fn_type, None);
                 let block = self.context.append_basic_block(function, "body");
 
@@ -772,10 +742,14 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                                     .insert(arg_name, (val_ptr, TypeLiteral::Char));
                                 codegen.builder.build_store(val_ptr, value.into_int_value());
                             }
+                            TypeLiteral::Void => panic!("void isn't a valid argument type"),
                         };
                     });
 
                 codegen.visit(*body);
+                if return_type == TypeLiteral::Void {
+                    codegen.builder.build_return(None);
+                }
 
                 self.scope.add_function(name, function, return_type);
 
@@ -789,6 +763,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                     Value::Bool(value) => value,
                     Value::Str(value) => value,
                     Value::Char(value) => value,
+                    Value::Void => panic!("void isn't a valid type"),
                 }));
                 Value::Int(self.context.i32_type().const_zero())
             }
@@ -811,6 +786,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                                 Value::Bool(value) => value.into(),
                                 Value::Str(value) => value.into(),
                                 Value::Char(value) => value.into(),
+                                Value::Void => panic!("void isn't a valid type"),
                             });
                         }
 
@@ -837,8 +813,12 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                                 TypeLiteral::Bool => Value::Bool(value.into_int_value()),
                                 TypeLiteral::Str => Value::Str(value.into_pointer_value()),
                                 TypeLiteral::Char => Value::Char(value.into_int_value()),
+                                TypeLiteral::Void => unreachable!(),
                             },
-                            None => panic!("Invalid call to {}", name),
+                            None => match return_type {
+                                TypeLiteral::Void => Value::Void,
+                                _ => panic!("Invalid call to {}", name),
+                            },
                         }
                     }
                 }

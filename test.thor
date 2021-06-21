@@ -1,3 +1,6 @@
+fn say(msg: str) {
+    print(msg)
+}
+
 string = "hello world"
-ch = string[3]
-print(string, ch)
+say(string)

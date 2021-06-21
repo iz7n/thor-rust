@@ -7,6 +7,7 @@ pub enum TypeLiteral {
     Bool,
     Str,
     Char,
+    Void,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -64,6 +65,7 @@ impl fmt::Display for TypeLiteral {
             Bool => write!(f, "bool"),
             Str => write!(f, "str"),
             Char => write!(f, "char"),
+            Void => write!(f, "void"),
         }
     }
 }

@@ -6,4 +6,5 @@ pub enum Value<'ctx> {
     Bool(IntValue<'ctx>),
     Str(PointerValue<'ctx>),
     Char(IntValue<'ctx>),
+    Void,
 }

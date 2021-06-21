@@ -43,6 +43,7 @@ impl<'a, 'ctx> Scope<'a, 'ctx> {
                     let value = builder.build_load(*ptr, &name);
                     Value::Char(value.into_int_value())
                 }
+                TypeLiteral::Void => panic!("void isn't a valid variable type"),
             },
             None => match self.parent {
                 Some(parent) => parent.get(name, builder),
@@ -95,6 +96,7 @@ impl<'a, 'ctx> Scope<'a, 'ctx> {
                 self.variables.insert(name, (val_ptr, TypeLiteral::Char));
                 builder.build_store(val_ptr, value);
             }
+            Value::Void => panic!("void isn't a valid type"),
         };
 
         value

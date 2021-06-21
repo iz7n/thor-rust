@@ -70,7 +70,7 @@ fn compile(text: String, filename: &str, out_filename: &str, log: bool) {
     codegen.generate_llvm_ir(ast);
     match codegen.module.verify() {
         Ok(_) => {}
-        Err(err) => eprintln!("{}", err),
+        Err(err) => eprintln!("{}", err.to_string()),
     };
     codegen
         .module
