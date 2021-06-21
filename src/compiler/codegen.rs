@@ -55,11 +55,10 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
     }
 
     pub fn create_child(&'a self, function: FunctionValue<'ctx>) -> Self {
-        let builder = self.context.create_builder();
         Self {
             context: self.context,
             module: self.module,
-            builder,
+            builder: self.context.create_builder(),
             function,
             scope: Scope::new(Some(&self.scope)),
         }
@@ -680,30 +679,38 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                         let arg_name = arg_name.clone();
                         let value = function.get_nth_param(i as u32).unwrap();
                         match literal {
-                            TypeLiteral::Int => codegen.scope.set(
-                                arg_name,
-                                Value::Int(value.into_int_value()),
-                                &self.context,
-                                &self.builder,
-                            ),
-                            TypeLiteral::Float => codegen.scope.set(
-                                arg_name,
-                                Value::Float(value.into_float_value()),
-                                &self.context,
-                                &self.builder,
-                            ),
-                            TypeLiteral::Bool => codegen.scope.set(
-                                arg_name,
-                                Value::Bool(value.into_int_value()),
-                                &self.context,
-                                &self.builder,
-                            ),
-                            TypeLiteral::Str => codegen.scope.set(
-                                arg_name,
-                                Value::Str(value.into_pointer_value()),
-                                &self.context,
-                                &self.builder,
-                            ),
+                            TypeLiteral::Int => {
+                                let val_ptr = codegen.builder.build_alloca(i32_type, &arg_name);
+                                codegen
+                                    .scope
+                                    .variables
+                                    .insert(arg_name, (val_ptr, TypeLiteral::Int));
+                                codegen.builder.build_store(val_ptr, value.into_int_value());
+                            }
+                            TypeLiteral::Float => {
+                                let val_ptr = codegen.builder.build_alloca(f64_type, &arg_name);
+                                codegen
+                                    .scope
+                                    .variables
+                                    .insert(arg_name, (val_ptr, TypeLiteral::Float));
+                                codegen
+                                    .builder
+                                    .build_store(val_ptr, value.into_float_value());
+                            }
+                            TypeLiteral::Bool => {
+                                let val_ptr = codegen.builder.build_alloca(bool_type, &arg_name);
+                                codegen
+                                    .scope
+                                    .variables
+                                    .insert(arg_name, (val_ptr, TypeLiteral::Bool));
+                                codegen.builder.build_store(val_ptr, value.into_int_value());
+                            }
+                            TypeLiteral::Str => {
+                                codegen.scope.variables.insert(
+                                    arg_name,
+                                    (value.into_pointer_value(), TypeLiteral::Str),
+                                );
+                            }
                         };
                     });
 

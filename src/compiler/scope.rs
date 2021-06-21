@@ -9,7 +9,7 @@ use inkwell::{
 use crate::{compiler::Value, TypeLiteral};
 
 pub struct Scope<'a, 'ctx> {
-    variables: HashMap<String, (PointerValue<'ctx>, TypeLiteral)>,
+    pub variables: HashMap<String, (PointerValue<'ctx>, TypeLiteral)>,
     functions: HashMap<String, (FunctionValue<'ctx>, TypeLiteral)>,
     parent: Option<&'a Scope<'a, 'ctx>>,
 }

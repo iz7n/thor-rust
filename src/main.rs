@@ -68,7 +68,10 @@ fn compile(text: String, filename: &str, out_filename: &str, log: bool) {
     let builder = context.create_builder();
     let mut codegen = Codegen::new(filename, &context, &module, builder);
     codegen.generate_llvm_ir(ast);
-    codegen.module.verify().expect("Errors were encountered");
+    match codegen.module.verify() {
+        Ok(_) => {}
+        Err(err) => eprintln!("{}", err),
+    };
     codegen
         .module
         .print_to_file(format!("{}.ll", out_filename))
