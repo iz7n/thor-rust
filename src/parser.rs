@@ -249,7 +249,7 @@ impl Parser {
     }
 
     fn atom(&mut self) -> Node {
-        match self.token.clone() {
+        let result= match self.token.clone() {
             Int(value) => {
                 self.advance();
                 Node::Int(value)
@@ -295,6 +295,23 @@ impl Parser {
             Fn => self.fn_expr(),
             EOF => Node::EOF,
             _ => panic!("expected int, float, bool, str, type, identifier, '(', 'if', 'while', 'for', or 'fn'"),
+        };
+        match self.token {
+            LBracket => {
+                self.advance();
+                let index = match self.expr() {
+                    Node::Int(index) => index as u32,
+                    _ => panic!("an index must be an int"),
+                };
+
+                if self.token != RBracket {
+                    panic!("expected ']'");
+                }
+                self.advance();
+
+                Node::Index(Box::new(result), index)
+            }
+            _ => result,
         }
     }
 

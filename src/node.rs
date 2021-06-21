@@ -45,6 +45,7 @@ pub enum Node {
     Unary(UnaryOp, Box<Node>),
     Binary(Box<Node>, BinaryOp, Box<Node>),
     IdentifierOp(String, IdentifierOp, Box<Node>),
+    Index(Box<Node>, u32),
     If(Box<Node>, Box<Node>, Option<Box<Node>>),
     While(Box<Node>, Box<Node>),
     For(String, Box<Node>, Box<Node>),
@@ -101,6 +102,7 @@ impl fmt::Display for Node {
                     Div => write!(f, "({} / {})", name, node),
                 }
             }
+            Node::Index(node, index) => write!(f, "{}[{}]", node, index),
             Node::If(condition, body, else_case) => match else_case {
                 Some(case) => write!(f, "if {}: {} else: {}", condition, body, case),
                 _ => write!(f, "if {}: {}", condition, body),

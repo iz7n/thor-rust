@@ -79,11 +79,12 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                     .bool_type()
                     .const_int(if value { 1 } else { 0 }, false),
             ),
-            Node::Str(value) => Value::Str(
-                self.builder
-                    .build_global_string_ptr(&value, "str")
-                    .as_pointer_value(),
-            ),
+            Node::Str(value) => Value::Str({
+                let string = self.context.const_string(value.as_bytes(), true);
+                let ptr = self.builder.build_alloca(string.get_type(), "str");
+                self.builder.build_store(ptr, string);
+                ptr
+            }),
             Node::Char(value) => Value::Char(self.context.i8_type().const_int(value as u64, false)),
             Node::Cast(literal, node) => {
                 let value = self.visit(*node);
@@ -509,6 +510,19 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                     )),
                 }
             }
+            Node::Index(node, index) => {
+                let value = self.visit(*node);
+                match value {
+                    Value::Str(value) => Value::Char({
+                        let chars = self.builder.build_load(value, "str").into_array_value();
+                        match self.builder.build_extract_value(chars, index, "index") {
+                            Some(value) => value.into_int_value(),
+                            None => self.context.i8_type().const_zero(),
+                        }
+                    }),
+                    _ => panic!("can only index strings"),
+                }
+            }
             Node::While(condition, body) => {
                 let condition_block = self.context.append_basic_block(self.function, "while_cond");
                 self.builder.build_unconditional_branch(condition_block);
@@ -836,7 +850,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                 }
                 rtn_value
             }
-            _ => panic!("Unknown node: {:?}", node),
+            _ => unimplemented!(),
         }
     }
 }

@@ -1,5 +1,3 @@
-i = 0
-while i < 5 {
-    print(i)
-    i += 1
-}
+string = "hello world"
+ch = string[3]
+print(string, ch)
