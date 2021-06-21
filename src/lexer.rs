@@ -43,6 +43,7 @@ impl Lexer {
                 ' ' | '\t' | '\r' => self.advance(),
                 '0'..='9' => self.number(),
                 '"' => self.string(),
+                '\'' => self.char(),
                 'a'..='z' | 'A'..='Z' | '_' | 'Α'..='ω' | '∞' => self.word(),
                 '=' => {
                     self.advance();
@@ -130,6 +131,14 @@ impl Lexer {
                     self.advance();
                     RBrace
                 }
+                '[' => {
+                    self.advance();
+                    LBracket
+                }
+                ']' => {
+                    self.advance();
+                    RBracket
+                }
                 ',' => {
                     self.advance();
                     Comma
@@ -202,6 +211,32 @@ impl Lexer {
         Str(string)
     }
 
+    fn char(&mut self) -> Token {
+        self.advance();
+
+        let ch = match self.current_char {
+            '\\' => {
+                self.advance();
+                match self.current_char {
+                    'n' => '\n',
+                    't' => '\t',
+                    'r' => '\r',
+                    '\\' => '\\',
+                    c => c,
+                }
+            }
+            c => c,
+        };
+        self.advance();
+
+        if self.current_char != '\'' {
+            panic!("char is too long");
+        }
+        self.advance();
+
+        Char(ch)
+    }
+
     fn word(&mut self) -> Token {
         let mut word: String = self.current_char.to_string();
         self.advance();
@@ -223,11 +258,13 @@ impl Lexer {
             "float" => Type(TypeLiteral::Float),
             "bool" => Type(TypeLiteral::Bool),
             "str" => Type(TypeLiteral::Str),
+            "char" => Type(TypeLiteral::Char),
             "not" => Not,
             "and" => And,
             "or" => Or,
             "if" => If,
             "else" => Else,
+            "while" => While,
             "for" => For,
             "in" => In,
             "fn" => Fn,

@@ -6,6 +6,7 @@ pub enum TypeLiteral {
     Float,
     Bool,
     Str,
+    Char,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -14,6 +15,7 @@ pub enum Token {
     Float(f64),
     Bool(bool),
     Str(String),
+    Char(char),
     Type(TypeLiteral),
     Identifier(String),
     Eq,
@@ -29,6 +31,8 @@ pub enum Token {
     RParen,
     LBrace,
     RBrace,
+    LBracket,
+    RBracket,
     In,
     Not,
     And,
@@ -43,6 +47,7 @@ pub enum Token {
     Colon,
     If,
     Else,
+    While,
     For,
     Fn,
     Return,
@@ -58,6 +63,7 @@ impl fmt::Display for TypeLiteral {
             Float => write!(f, "float"),
             Bool => write!(f, "bool"),
             Str => write!(f, "str"),
+            Char => write!(f, "char"),
         }
     }
 }
@@ -70,6 +76,7 @@ impl fmt::Display for Token {
             Float(value) => write!(f, "{}f", value),
             Bool(value) => write!(f, "{}", value),
             Str(value) => write!(f, "\"{}\"", value),
+            Char(value) => write!(f, "'{}'", value),
             Type(literal) => write!(f, "{}", literal),
             Identifier(name) => write!(f, "{}", name),
             Eq => write!(f, "'='"),
@@ -85,6 +92,8 @@ impl fmt::Display for Token {
             RParen => write!(f, "')'"),
             LBrace => write!(f, "'{{'"),
             RBrace => write!(f, "'}}'"),
+            LBracket => write!(f, "'['"),
+            RBracket => write!(f, "']'"),
             In => write!(f, "'in'"),
             Not => write!(f, "'not'"),
             And => write!(f, "'and'"),
@@ -99,6 +108,7 @@ impl fmt::Display for Token {
             Colon => write!(f, "':'"),
             If => write!(f, "'if'"),
             Else => write!(f, "'else'"),
+            While => write!(f, "'while'"),
             For => write!(f, "'for'"),
             Fn => write!(f, "'fn'"),
             Return => write!(f, "'return'"),

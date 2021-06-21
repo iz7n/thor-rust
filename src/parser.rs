@@ -266,6 +266,10 @@ impl Parser {
                 self.advance();
                 Node::Str(value)
             }
+            Char(value) => {
+                self.advance();
+                Node::Char(value)
+            }
             Type(literal) => {
                 self.advance();
                 Node::Type(literal)
@@ -286,10 +290,11 @@ impl Parser {
                 result
             }
             If => self.if_expr(),
+            While => self.while_expr(),
             For => self.for_expr(),
             Fn => self.fn_expr(),
             EOF => Node::EOF,
-            _ => panic!("expected int, float, bool, type, identifier, '(', 'if', 'for', or 'fn'"),
+            _ => panic!("expected int, float, bool, str, type, identifier, '(', 'if', 'while', 'for', or 'fn'"),
         }
     }
 
@@ -337,6 +342,26 @@ impl Parser {
             If => self.if_expr(),
             _ => panic!("{}", "expected ':', '{', or 'if'"),
         }
+    }
+
+    fn while_expr(&mut self) -> Node {
+        if self.token != While {
+            panic!("expected 'while'");
+        }
+        self.advance();
+
+        let condition = self.expr();
+
+        let body = match self.token {
+            Colon => {
+                self.advance();
+                self.statement()
+            }
+            LBrace => self.block(),
+            _ => panic!("{}", "expected ':' or '{'"),
+        };
+
+        Node::While(Box::new(condition), Box::new(body))
     }
 
     fn for_expr(&mut self) -> Node {

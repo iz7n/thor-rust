@@ -5,4 +5,5 @@ pub enum Value<'ctx> {
     Float(FloatValue<'ctx>),
     Bool(IntValue<'ctx>),
     Str(PointerValue<'ctx>),
+    Char(IntValue<'ctx>),
 }

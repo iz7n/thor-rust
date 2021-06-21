@@ -1,7 +1,5 @@
-fn say(msg: str): str {
-    print(msg)
-    return msg
+i = 0
+while i < 5 {
+    print(i)
+    i += 1
 }
-
-msg = say("hello world")
-print(msg)

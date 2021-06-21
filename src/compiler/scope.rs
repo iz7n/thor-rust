@@ -39,6 +39,10 @@ impl<'a, 'ctx> Scope<'a, 'ctx> {
                     Value::Bool(value.into_int_value())
                 }
                 TypeLiteral::Str => Value::Str(*ptr),
+                TypeLiteral::Char => {
+                    let value = builder.build_load(*ptr, &name);
+                    Value::Char(value.into_int_value())
+                }
             },
             None => match self.parent {
                 Some(parent) => parent.get(name, builder),
@@ -82,6 +86,14 @@ impl<'a, 'ctx> Scope<'a, 'ctx> {
             }
             Value::Str(value) => {
                 self.variables.insert(name, (value, TypeLiteral::Str));
+            }
+            Value::Char(value) => {
+                let val_ptr = match val_ptr_result {
+                    None => builder.build_alloca(context.i8_type(), &name),
+                    Some((ptr, _)) => *ptr,
+                };
+                self.variables.insert(name, (val_ptr, TypeLiteral::Char));
+                builder.build_store(val_ptr, value);
             }
         };
 

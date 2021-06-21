@@ -33,12 +33,15 @@ atom:
 	| IDENTIFIER
 	| '(' expr ')'
 	| if_expr
+	| while_expr
 	| for_expr
 	| fn_expr;
 
 if_expr: 'if' expr (':' statement | block);
 
 else_expr: 'else' ((':' statement) | block | if_expr);
+
+while_expr: 'while' expr (':' statement | block);
 
 for_expr: 'for' IDENTIFIER 'in' expr (':' statement | block);
 

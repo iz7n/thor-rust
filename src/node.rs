@@ -38,6 +38,7 @@ pub enum Node {
     Float(f64),
     Bool(bool),
     Str(String),
+    Char(char),
     Type(TypeLiteral),
     Cast(TypeLiteral, Box<Node>),
     Identifier(String),
@@ -45,6 +46,7 @@ pub enum Node {
     Binary(Box<Node>, BinaryOp, Box<Node>),
     IdentifierOp(String, IdentifierOp, Box<Node>),
     If(Box<Node>, Box<Node>, Option<Box<Node>>),
+    While(Box<Node>, Box<Node>),
     For(String, Box<Node>, Box<Node>),
     Fn(String, Vec<(String, TypeLiteral)>, TypeLiteral, Box<Node>),
     Return(Box<Node>),
@@ -60,57 +62,85 @@ impl fmt::Display for Node {
             Node::Float(value) => write!(f, "{}f", value),
             Node::Bool(value) => write!(f, "{}", value),
             Node::Str(value) => write!(f, "\"{}\"", value),
+            Node::Char(value) => write!(f, "'{}'", value),
             Node::Type(literal) => write!(f, "{}", literal),
             Node::Cast(literal, node) => write!(f, "{}({})", literal, node),
             Node::Identifier(name) => write!(f, "{}", name),
             Node::Unary(op, node) => {
                 use UnaryOp::*;
                 match op {
-                    Pos => write!(f, "(+{})", *node),
-                    Neg => write!(f, "(-{})", *node),
-                    Not => write!(f, "(not {})", *node),
+                    Pos => write!(f, "(+{})", node),
+                    Neg => write!(f, "(-{})", node),
+                    Not => write!(f, "(not {})", node),
                 }
             }
             Node::Binary(left, op, right) => {
                 use BinaryOp::*;
                 match op {
-                    Add => write!(f, "({} + {})", *left, *right),
-                    Sub => write!(f, "({} - {})", *left, *right),
-                    Mul => write!(f, "({} * {})", *left, *right),
-                    Div => write!(f, "({} / {})", *left, *right),
-                    And => write!(f, "({} and {})", *left, *right),
-                    Or => write!(f, "({} or {})", *left, *right),
-                    EqEq => write!(f, "({} == {})", *left, *right),
-                    Neq => write!(f, "({} != {})", *left, *right),
-                    Lt => write!(f, "({} < {})", *left, *right),
-                    Lte => write!(f, "({} <= {})", *left, *right),
-                    Gt => write!(f, "({} > {})", *left, *right),
-                    Gte => write!(f, "({} >= {})", *left, *right),
+                    Add => write!(f, "({} + {})", left, right),
+                    Sub => write!(f, "({} - {})", left, right),
+                    Mul => write!(f, "({} * {})", left, right),
+                    Div => write!(f, "({} / {})", left, right),
+                    And => write!(f, "({} and {})", left, right),
+                    Or => write!(f, "({} or {})", left, right),
+                    EqEq => write!(f, "({} == {})", left, right),
+                    Neq => write!(f, "({} != {})", left, right),
+                    Lt => write!(f, "({} < {})", left, right),
+                    Lte => write!(f, "({} <= {})", left, right),
+                    Gt => write!(f, "({} > {})", left, right),
+                    Gte => write!(f, "({} >= {})", left, right),
                 }
             }
             Node::IdentifierOp(name, op, node) => {
                 use IdentifierOp::*;
                 match op {
-                    Eq => write!(f, "({} = {})", name, *node),
-                    Add => write!(f, "({} + {})", name, *node),
-                    Sub => write!(f, "({} - {})", name, *node),
-                    Mul => write!(f, "({} * {})", name, *node),
-                    Div => write!(f, "({} / {})", name, *node),
+                    Eq => write!(f, "({} = {})", name, node),
+                    Add => write!(f, "({} + {})", name, node),
+                    Sub => write!(f, "({} - {})", name, node),
+                    Mul => write!(f, "({} * {})", name, node),
+                    Div => write!(f, "({} / {})", name, node),
                 }
             }
             Node::If(condition, body, else_case) => match else_case {
-                Some(case) => write!(f, "if {} then {} else {}", *condition, *body, *case),
-                _ => write!(f, "if {} then {}", *condition, body),
+                Some(case) => write!(f, "if {}: {} else: {}", condition, body, case),
+                _ => write!(f, "if {}: {}", condition, body),
             },
+            Node::While(condition, body) => write!(f, "while {}: {}", condition, body),
             Node::For(identifier, iterable, body) => {
-                write!(f, "for {} in {}: {}", identifier, *iterable, *body)
+                write!(f, "for {} in {}: {}", identifier, iterable, body)
             }
             Node::Fn(name, args, return_type, body) => {
-                write!(f, "fn {} ({:?}): {} {{{}}}", name, args, return_type, *body)
+                write!(
+                    f,
+                    "fn {} ({}) -> {}: {}",
+                    name,
+                    args.iter()
+                        .map(|(name, ty)| format!("{}: {}", name, ty))
+                        .collect::<Vec<String>>()
+                        .join(", "),
+                    return_type,
+                    body
+                )
             }
-            Node::Return(node) => write!(f, "(return {})", *node),
-            Node::Call(name, args) => write!(f, "{}({:?})", name, args),
-            Node::Statements(nodes) => write!(f, "{:?}", nodes),
+            Node::Return(node) => write!(f, "(return {})", node),
+            Node::Call(name, args) => write!(
+                f,
+                "{}({})",
+                name,
+                args.iter()
+                    .map(|arg| format!("{}", arg))
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
+            Node::Statements(nodes) => write!(
+                f,
+                "[\n  {}\n]",
+                nodes
+                    .iter()
+                    .map(|node| format!("{}", node))
+                    .collect::<Vec<String>>()
+                    .join("\n  ")
+            ),
             Node::EOF => write!(f, "<eof>"),
         }
     }
