@@ -1,6 +1,7 @@
-fn say(msg: str) {
-    print(msg)
+fn get_index(arr: int[3]): int {
+    return arr[1]
 }
 
-string = "hello world"
-say(string)
+arr = [1, 2, 3]
+item = get_index(arr)
+print(item)

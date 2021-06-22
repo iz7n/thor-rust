@@ -2,7 +2,7 @@ use inkwell::{module::Linkage, types::BasicTypeEnum, values::BasicValueEnum};
 
 use crate::{
     compiler::{Codegen, Value},
-    TypeLiteral,
+    Type,
 };
 
 impl<'a, 'ctx> Codegen<'a, 'ctx> {
@@ -21,7 +21,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
             .add_function("printf", printf_type, Some(Linkage::External));
 
         self.scope
-            .add_function("print".to_string(), printf_fn, TypeLiteral::Int);
+            .add_function("print".to_string(), printf_fn, Type::Int);
     }
 
     pub fn generate_printf_format_string(
@@ -37,6 +37,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                 Value::Bool(_) => "%i ",
                 Value::Str(_) => "%s ",
                 Value::Char(_) => "%c ",
+                Value::Array(_, _, _) => "%p ",
                 Value::Void => "%p ",
             };
 

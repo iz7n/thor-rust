@@ -3,13 +3,13 @@ use inkwell::{
     context::Context,
     module::Module,
     types::BasicTypeEnum,
-    values::{BasicValueEnum, FunctionValue},
+    values::{BasicValueEnum, FloatValue, FunctionValue, IntValue, PointerValue},
     AddressSpace, FloatPredicate, IntPredicate,
 };
 
 use crate::{
     compiler::{Scope, Value},
-    BinaryOp, IdentifierOp, Node, TypeLiteral, UnaryOp,
+    BinaryOp, IdentifierOp, Node, Type, TypeLiteral, UnaryOp,
 };
 
 pub struct Codegen<'a, 'ctx> {
@@ -86,47 +86,134 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                 ptr
             }),
             Node::Char(value) => Value::Char(self.context.i8_type().const_int(value as u64, false)),
-            Node::Cast(literal, node) => {
+            Node::Array(nodes) => {
+                let size = nodes.len() as u32;
+                let mut ty = TypeLiteral::Int;
+
+                let mut values: Vec<BasicValueEnum<'ctx>> = vec![];
+                for node in nodes {
+                    let value = self.visit(node);
+                    ty = match value {
+                        Value::Int(_) => TypeLiteral::Int,
+                        Value::Float(_) => TypeLiteral::Float,
+                        Value::Bool(_) => TypeLiteral::Bool,
+                        Value::Str(_) => TypeLiteral::Str,
+                        Value::Char(_) => TypeLiteral::Char,
+                        _ => panic!("invalid array type"),
+                    };
+                    values.push(value.get_value());
+                }
+
+                let int_type = self.context.i32_type();
+                let float_type = self.context.f64_type();
+                let bool_type = self.context.bool_type();
+                let str_type = self.context.i8_type().ptr_type(AddressSpace::Generic);
+                let char_type = self.context.i8_type();
+
+                let array = match ty {
+                    TypeLiteral::Int => int_type.const_array(
+                        values
+                            .iter()
+                            .map(|value| value.into_int_value())
+                            .collect::<Vec<IntValue<'ctx>>>()
+                            .as_slice(),
+                    ),
+                    TypeLiteral::Float => float_type.const_array(
+                        values
+                            .iter()
+                            .map(|value| value.into_float_value())
+                            .collect::<Vec<FloatValue<'ctx>>>()
+                            .as_slice(),
+                    ),
+                    TypeLiteral::Bool => bool_type.const_array(
+                        values
+                            .iter()
+                            .map(|value| value.into_int_value())
+                            .collect::<Vec<IntValue<'ctx>>>()
+                            .as_slice(),
+                    ),
+                    TypeLiteral::Str => str_type.const_array(
+                        values
+                            .iter()
+                            .map(|value| value.into_pointer_value())
+                            .collect::<Vec<PointerValue<'ctx>>>()
+                            .as_slice(),
+                    ),
+                    TypeLiteral::Char => char_type.const_array(
+                        values
+                            .iter()
+                            .map(|value| value.into_int_value())
+                            .collect::<Vec<IntValue<'ctx>>>()
+                            .as_slice(),
+                    ),
+                    TypeLiteral::Void => unreachable!(),
+                };
+
+                let size_value = int_type.const_int(size as u64, false);
+                let ptr = match ty {
+                    TypeLiteral::Int => self
+                        .builder
+                        .build_array_alloca(int_type, size_value, "array"),
+                    TypeLiteral::Float => self
+                        .builder
+                        .build_array_alloca(float_type, size_value, "array"),
+                    TypeLiteral::Bool => self
+                        .builder
+                        .build_array_alloca(bool_type, size_value, "array"),
+                    TypeLiteral::Str => self
+                        .builder
+                        .build_array_alloca(str_type, size_value, "array"),
+                    TypeLiteral::Char => self
+                        .builder
+                        .build_array_alloca(char_type, size_value, "array"),
+                    TypeLiteral::Void => unreachable!(),
+                };
+                self.builder.build_store(ptr, array);
+
+                Value::Array(ptr, ty, size)
+            }
+            Node::Cast(ty, node) => {
                 let value = self.visit(*node);
 
-                let i32_type = self.context.i32_type();
-                let f64_type = self.context.f64_type();
+                let int_type = self.context.i32_type();
+                let float_type = self.context.f64_type();
                 let bool_type = self.context.bool_type();
 
-                match literal {
-                    TypeLiteral::Int => Value::Int(match value {
+                match ty {
+                    Type::Int => Value::Int(match value {
                         Value::Int(value) | Value::Bool(value) => value,
                         Value::Float(value) => self
                             .builder
-                            .build_float_to_signed_int(value, i32_type, "int"),
+                            .build_float_to_signed_int(value, int_type, "int"),
                         _ => unimplemented!(),
                     }),
-                    TypeLiteral::Float => Value::Float(match value {
+                    Type::Float => Value::Float(match value {
                         Value::Int(value) => self
                             .builder
-                            .build_signed_int_to_float(value, f64_type, "float"),
+                            .build_signed_int_to_float(value, float_type, "float"),
                         Value::Float(value) => value,
                         Value::Bool(value) => self
                             .builder
-                            .build_unsigned_int_to_float(value, f64_type, "float"),
+                            .build_unsigned_int_to_float(value, float_type, "float"),
                         _ => unimplemented!(),
                     }),
-                    TypeLiteral::Bool => Value::Bool(match value {
+                    Type::Bool => Value::Bool(match value {
                         Value::Int(value) | Value::Bool(value) => value,
                         Value::Float(value) => self
                             .builder
                             .build_float_to_unsigned_int(value, bool_type, "bool"),
                         _ => unimplemented!(),
                     }),
-                    TypeLiteral::Str => Value::Str(match value {
+                    Type::Str => Value::Str(match value {
                         Value::Str(value) => value,
                         _ => unimplemented!(),
                     }),
-                    TypeLiteral::Char => Value::Char(match value {
+                    Type::Char => Value::Char(match value {
                         Value::Char(value) => value,
                         _ => unimplemented!(),
                     }),
-                    TypeLiteral::Void => panic!("can't cast to a void type"),
+                    Type::Array(_, _) => panic!("can't cast to an array"),
+                    Type::Void => panic!("can't cast to a void type"),
                 }
             }
             Node::Identifier(name) => self.scope.get(&name, &self.builder),
@@ -266,8 +353,20 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                         },
                         _ => unimplemented!(),
                     },
-                    And => unimplemented!(),
-                    Or => unimplemented!(),
+                    And => match l_value {
+                        Value::Bool(l) => match r_value {
+                            Value::Bool(r) => Value::Bool(self.builder.build_and(l, r, "and")),
+                            _ => unimplemented!(),
+                        },
+                        _ => unimplemented!(),
+                    },
+                    Or => match l_value {
+                        Value::Bool(l) => match r_value {
+                            Value::Bool(r) => Value::Bool(self.builder.build_or(l, r, "or")),
+                            _ => unimplemented!(),
+                        },
+                        _ => unimplemented!(),
+                    },
                     EqEq => match l_value {
                         Value::Int(l) | Value::Char(l) => match r_value {
                             Value::Int(r) | Value::Char(r) => Value::Bool(
@@ -521,7 +620,23 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                             None => self.context.i8_type().const_zero(),
                         }
                     }),
-                    _ => panic!("can only index strings"),
+                    Value::Array(value, ty, _) => {
+                        let array = self.builder.build_load(value, "array").into_array_value();
+                        let item = self.builder.build_extract_value(array, index, "index");
+                        println!("ITEM: {:#?}", item);
+                        match item {
+                            Some(value) => match ty {
+                                TypeLiteral::Int => Value::Int(value.into_int_value()),
+                                TypeLiteral::Float => Value::Float(value.into_float_value()),
+                                TypeLiteral::Bool => Value::Bool(value.into_int_value()),
+                                TypeLiteral::Str => Value::Str(value.into_pointer_value()),
+                                TypeLiteral::Char => Value::Char(value.into_int_value()),
+                                TypeLiteral::Void => panic!("can't have a void array"),
+                            },
+                            None => panic!("failed to index array"),
+                        }
+                    }
+                    _ => panic!("index {} is out of bounds", index),
                 }
             }
             Node::While(condition, body) => {
@@ -582,44 +697,12 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
 
                         self.builder.position_at_end(end_block);
 
-                        let phi = self.builder.build_phi(
-                            match then_value {
-                                Value::Int(_) => BasicTypeEnum::IntType(self.context.i32_type()),
-                                Value::Float(_) => {
-                                    BasicTypeEnum::FloatType(self.context.f64_type())
-                                }
-                                Value::Bool(_) => BasicTypeEnum::IntType(self.context.bool_type()),
-                                Value::Str(_) => BasicTypeEnum::VectorType(
-                                    self.context.const_string(&[], false).get_type(),
-                                ),
-                                Value::Char(_) => BasicTypeEnum::IntType(self.context.i8_type()),
-                                Value::Void => panic!("void isn't a valid type"),
-                            },
-                            "phi",
-                        );
+                        let phi = self
+                            .builder
+                            .build_phi(then_value.get_type(self.context), "phi");
                         phi.add_incoming(&[
-                            (
-                                &match then_value {
-                                    Value::Int(value) => BasicValueEnum::IntValue(value),
-                                    Value::Float(value) => BasicValueEnum::FloatValue(value),
-                                    Value::Bool(value) => BasicValueEnum::IntValue(value),
-                                    Value::Str(value) => BasicValueEnum::PointerValue(value),
-                                    Value::Char(value) => BasicValueEnum::IntValue(value),
-                                    Value::Void => panic!("void isn't a valid type"),
-                                },
-                                then_block,
-                            ),
-                            (
-                                &match else_value {
-                                    Value::Int(value) => BasicValueEnum::IntValue(value),
-                                    Value::Float(value) => BasicValueEnum::FloatValue(value),
-                                    Value::Bool(value) => BasicValueEnum::IntValue(value),
-                                    Value::Str(value) => BasicValueEnum::PointerValue(value),
-                                    Value::Char(value) => BasicValueEnum::IntValue(value),
-                                    Value::Void => panic!("void isn't a valid type"),
-                                },
-                                else_block,
-                            ),
+                            (&then_value.get_value(), then_block),
+                            (&else_value.get_value(), else_block),
                         ]);
 
                         let phi_value = phi.as_basic_value();
@@ -629,6 +712,9 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                             Value::Bool(_) => Value::Bool(phi_value.into_int_value()),
                             Value::Str(_) => Value::Str(phi_value.into_pointer_value()),
                             Value::Char(_) => Value::Char(phi_value.into_int_value()),
+                            Value::Array(_, ty, size) => {
+                                Value::Array(phi_value.into_pointer_value(), ty, size)
+                            }
                             Value::Void => panic!("void isn't a valid type"),
                         }
                     }
@@ -653,107 +739,111 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                 }
             }
             Node::Fn(name, args, return_type, body) => {
-                let i32_type = self.context.i32_type();
-                let f64_type = self.context.f64_type();
+                let int_type = self.context.i32_type();
+                let float_type = self.context.f64_type();
                 let bool_type = self.context.bool_type();
                 let str_type = self.context.i8_type().ptr_type(AddressSpace::Generic);
                 let char_type = self.context.i8_type();
                 let void_type = self.context.void_type();
 
                 macro_rules! make_args {
-                    ($(($literal:tt,$type:expr)),*) => {
-                        match return_type {
-                            $(
-                                TypeLiteral::$literal => $type.fn_type(
-                                    args.iter()
-                                        .map(|(_, literal)| match literal {
-                                            TypeLiteral::Int => BasicTypeEnum::IntType(i32_type),
-                                            TypeLiteral::Float => BasicTypeEnum::FloatType(f64_type),
-                                            TypeLiteral::Bool => BasicTypeEnum::IntType(bool_type),
-                                            TypeLiteral::Str => BasicTypeEnum::PointerType(str_type),
-                                            TypeLiteral::Char => BasicTypeEnum::IntType(char_type),
-                                            TypeLiteral::Void => panic!("void isn't a valid argument type"),
-                                        })
-                                        .collect::<Vec<BasicTypeEnum>>()
-                                        .as_slice(),
-                                    false,
-                                ),
-                            )*
-                        }
+                    () => {
+                        args.iter()
+                            .map(|(_, ty)| ty.get_type(self.context))
+                            .collect::<Vec<BasicTypeEnum>>()
+                            .as_slice()
                     };
                 }
 
-                let fn_type = make_args!(
-                    (Int, i32_type),
-                    (Float, f64_type),
-                    (Bool, bool_type),
-                    (Str, str_type),
-                    (Char, char_type),
-                    (Void, void_type)
-                );
+                let fn_type = match return_type {
+                    Type::Int => int_type.fn_type(make_args!(), false),
+                    Type::Float => float_type.fn_type(make_args!(), false),
+                    Type::Bool => bool_type.fn_type(make_args!(), false),
+                    Type::Str => str_type.fn_type(make_args!(), false),
+                    Type::Char => char_type.fn_type(make_args!(), false),
+                    Type::Array(ty, size) => match ty {
+                        TypeLiteral::Int => int_type.array_type(size).fn_type(make_args!(), false),
+                        TypeLiteral::Float => {
+                            float_type.array_type(size).fn_type(make_args!(), false)
+                        }
+                        TypeLiteral::Bool => {
+                            bool_type.array_type(size).fn_type(make_args!(), false)
+                        }
+                        TypeLiteral::Str => str_type.array_type(size).fn_type(make_args!(), false),
+                        TypeLiteral::Char => {
+                            char_type.array_type(size).fn_type(make_args!(), false)
+                        }
+                        TypeLiteral::Void => panic!("can't have a void array"),
+                    },
+                    Type::Void => void_type.fn_type(make_args!(), false),
+                };
                 let function = self.module.add_function(&name, fn_type, None);
                 let block = self.context.append_basic_block(function, "body");
 
                 let mut codegen = self.create_child(self.function);
                 codegen.builder.position_at_end(block);
-                args.iter()
-                    .enumerate()
-                    .for_each(|(i, (arg_name, literal))| {
-                        let arg_name = arg_name.clone();
-                        let value = function.get_nth_param(i as u32).unwrap();
-                        match literal {
-                            TypeLiteral::Int => {
-                                let val_ptr = codegen.builder.build_alloca(i32_type, &arg_name);
-                                codegen
-                                    .scope
-                                    .variables
-                                    .insert(arg_name, (val_ptr, TypeLiteral::Int));
-                                codegen.builder.build_store(val_ptr, value.into_int_value());
-                            }
-                            TypeLiteral::Float => {
-                                let val_ptr = codegen.builder.build_alloca(f64_type, &arg_name);
-                                codegen
-                                    .scope
-                                    .variables
-                                    .insert(arg_name, (val_ptr, TypeLiteral::Float));
-                                codegen
-                                    .builder
-                                    .build_store(val_ptr, value.into_float_value());
-                            }
-                            TypeLiteral::Bool => {
-                                let val_ptr = codegen.builder.build_alloca(bool_type, &arg_name);
-                                codegen
-                                    .scope
-                                    .variables
-                                    .insert(arg_name, (val_ptr, TypeLiteral::Bool));
-                                codegen.builder.build_store(val_ptr, value.into_int_value());
-                            }
-                            TypeLiteral::Str => {
-                                codegen.scope.variables.insert(
-                                    arg_name,
-                                    (value.into_pointer_value(), TypeLiteral::Str),
-                                );
-                            }
-                            TypeLiteral::Char => {
-                                let val_ptr = codegen.builder.build_alloca(bool_type, &arg_name);
-                                codegen
-                                    .scope
-                                    .variables
-                                    .insert(arg_name, (val_ptr, TypeLiteral::Char));
-                                codegen.builder.build_store(val_ptr, value.into_int_value());
-                            }
-                            TypeLiteral::Void => panic!("void isn't a valid argument type"),
-                        };
-                    });
+                args.iter().enumerate().for_each(|(i, (arg_name, ty))| {
+                    let arg_name = arg_name.clone();
+                    let value = function.get_nth_param(i as u32).unwrap();
+                    match ty {
+                        Type::Int => {
+                            let val_ptr = codegen.builder.build_alloca(int_type, &arg_name);
+                            codegen
+                                .scope
+                                .variables
+                                .insert(arg_name, (val_ptr, Type::Int));
+                            codegen.builder.build_store(val_ptr, value.into_int_value());
+                        }
+                        Type::Float => {
+                            let val_ptr = codegen.builder.build_alloca(float_type, &arg_name);
+                            codegen
+                                .scope
+                                .variables
+                                .insert(arg_name, (val_ptr, Type::Float));
+                            codegen
+                                .builder
+                                .build_store(val_ptr, value.into_float_value());
+                        }
+                        Type::Bool => {
+                            let val_ptr = codegen.builder.build_alloca(bool_type, &arg_name);
+                            codegen
+                                .scope
+                                .variables
+                                .insert(arg_name, (val_ptr, Type::Bool));
+                            codegen.builder.build_store(val_ptr, value.into_int_value());
+                        }
+                        Type::Str => {
+                            codegen
+                                .scope
+                                .variables
+                                .insert(arg_name, (value.into_pointer_value(), Type::Str));
+                        }
+                        Type::Char => {
+                            let val_ptr = codegen.builder.build_alloca(bool_type, &arg_name);
+                            codegen
+                                .scope
+                                .variables
+                                .insert(arg_name, (val_ptr, Type::Char));
+                            codegen.builder.build_store(val_ptr, value.into_int_value());
+                        }
+                        Type::Array(arr_ty, size) => {
+                            codegen.scope.variables.insert(
+                                arg_name,
+                                (value.into_pointer_value(), Type::Array(*arr_ty, *size)),
+                            );
+                        }
+                        Type::Void => panic!("void isn't a valid argument type"),
+                    };
+                });
 
                 codegen.visit(*body);
-                if return_type == TypeLiteral::Void {
+                if return_type == Type::Void {
                     codegen.builder.build_return(None);
                 }
 
                 self.scope.add_function(name, function, return_type);
 
-                Value::Int(i32_type.const_zero())
+                Value::Int(int_type.const_zero())
             }
             Node::Return(node) => {
                 let value = self.visit(*node);
@@ -763,6 +853,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                     Value::Bool(value) => value,
                     Value::Str(value) => value,
                     Value::Char(value) => value,
+                    Value::Array(value, _, _) => value,
                     Value::Void => panic!("void isn't a valid type"),
                 }));
                 Value::Int(self.context.i32_type().const_zero())
@@ -786,6 +877,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                                 Value::Bool(value) => value.into(),
                                 Value::Str(value) => value.into(),
                                 Value::Char(value) => value.into(),
+                                Value::Array(value, _, _) => value.into(),
                                 Value::Void => panic!("void isn't a valid type"),
                             });
                         }
@@ -808,15 +900,18 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                             .left()
                         {
                             Some(value) => match return_type {
-                                TypeLiteral::Int => Value::Int(value.into_int_value()),
-                                TypeLiteral::Float => Value::Float(value.into_float_value()),
-                                TypeLiteral::Bool => Value::Bool(value.into_int_value()),
-                                TypeLiteral::Str => Value::Str(value.into_pointer_value()),
-                                TypeLiteral::Char => Value::Char(value.into_int_value()),
-                                TypeLiteral::Void => unreachable!(),
+                                Type::Int => Value::Int(value.into_int_value()),
+                                Type::Float => Value::Float(value.into_float_value()),
+                                Type::Bool => Value::Bool(value.into_int_value()),
+                                Type::Str => Value::Str(value.into_pointer_value()),
+                                Type::Char => Value::Char(value.into_int_value()),
+                                Type::Array(ty, size) => {
+                                    Value::Array(value.into_pointer_value(), *ty, *size)
+                                }
+                                Type::Void => unreachable!(),
                             },
                             None => match return_type {
-                                TypeLiteral::Void => Value::Void,
+                                Type::Void => Value::Void,
                                 _ => panic!("Invalid call to {}", name),
                             },
                         }

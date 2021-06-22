@@ -8,7 +8,7 @@
 - [x] bool
 - [x] string
 - [x] char8
-- [ ] array
+- [x] array
 - [ ] list
 - [ ] vector
 - [ ] struct
@@ -31,8 +31,8 @@
 - [x] `>` greater than
 - [x] `>=` greater than or equal to
 - [x] `not`
-- [ ] `and`
-- [ ] `or`
+- [x] `and`
+- [x] `or`
 - [ ] `is`
 - [ ] `is not`
 - [ ] `in`

@@ -32,11 +32,14 @@ atom:
 	| STRING
 	| IDENTIFIER
 	| '(' expr ')'
+	| array_expr
 	| if_expr
 	| while_expr
 	| for_expr
 	| fn_expr
 	| atom '[' INT ']';
+
+array_expr: '[' expr? (',' expr)* ']';
 
 if_expr: 'if' expr (':' statement | block);
 

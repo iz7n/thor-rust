@@ -17,7 +17,7 @@ mod token;
 
 use compiler::Codegen;
 pub use lexer::Lexer;
-pub use node::{BinaryOp, IdentifierOp, Node, UnaryOp};
+pub use node::{BinaryOp, IdentifierOp, Node, Type, UnaryOp};
 pub use parser::Parser;
 pub use token::{Token, TypeLiteral};
 

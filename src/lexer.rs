@@ -177,7 +177,7 @@ impl Lexer {
         if decimals > 0 {
             Float(num_str.parse::<f64>().unwrap())
         } else {
-            Int(num_str.parse::<i32>().unwrap())
+            Int(num_str.parse::<u32>().unwrap())
         }
     }
 
@@ -254,11 +254,11 @@ impl Lexer {
         match word.as_str() {
             "true" => Bool(true),
             "false" => Bool(false),
-            "int" => Type(TypeLiteral::Int),
-            "float" => Type(TypeLiteral::Float),
-            "bool" => Type(TypeLiteral::Bool),
-            "str" => Type(TypeLiteral::Str),
-            "char" => Type(TypeLiteral::Char),
+            "int" => Ty(TypeLiteral::Int),
+            "float" => Ty(TypeLiteral::Float),
+            "bool" => Ty(TypeLiteral::Bool),
+            "str" => Ty(TypeLiteral::Str),
+            "char" => Ty(TypeLiteral::Char),
             "not" => Not,
             "and" => And,
             "or" => Or,

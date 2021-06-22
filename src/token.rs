@@ -1,6 +1,6 @@
 use std::fmt;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum TypeLiteral {
     Int,
     Float,
@@ -10,14 +10,28 @@ pub enum TypeLiteral {
     Void,
 }
 
+impl fmt::Display for TypeLiteral {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use TypeLiteral::*;
+        match self {
+            Int => write!(f, "int"),
+            Float => write!(f, "float"),
+            Bool => write!(f, "bool"),
+            Str => write!(f, "str"),
+            Char => write!(f, "char"),
+            Void => write!(f, "void"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
-    Int(i32),
+    Int(u32),
     Float(f64),
     Bool(bool),
     Str(String),
     Char(char),
-    Type(TypeLiteral),
+    Ty(TypeLiteral),
     Identifier(String),
     Eq,
     Add,
@@ -56,20 +70,6 @@ pub enum Token {
     EOF,
 }
 
-impl fmt::Display for TypeLiteral {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use TypeLiteral::*;
-        match self {
-            Int => write!(f, "int"),
-            Float => write!(f, "float"),
-            Bool => write!(f, "bool"),
-            Str => write!(f, "str"),
-            Char => write!(f, "char"),
-            Void => write!(f, "void"),
-        }
-    }
-}
-
 impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use Token::*;
@@ -79,7 +79,7 @@ impl fmt::Display for Token {
             Bool(value) => write!(f, "{}", value),
             Str(value) => write!(f, "\"{}\"", value),
             Char(value) => write!(f, "'{}'", value),
-            Type(literal) => write!(f, "{}", literal),
+            Ty(literal) => write!(f, "{}", literal),
             Identifier(name) => write!(f, "{}", name),
             Eq => write!(f, "'='"),
             Add => write!(f, "'+'"),

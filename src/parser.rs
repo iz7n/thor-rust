@@ -1,4 +1,4 @@
-use crate::{BinaryOp, IdentifierOp, Node, Token, TypeLiteral, UnaryOp};
+use crate::{BinaryOp, IdentifierOp, Node, Token, Type, TypeLiteral, UnaryOp};
 
 pub struct Parser {
     tokens: Vec<Token>,
@@ -270,9 +270,40 @@ impl Parser {
                 self.advance();
                 Node::Char(value)
             }
-            Type(literal) => {
+            Ty(literal) => {
                 self.advance();
-                Node::Type(literal)
+
+                let array_size = match self.token {
+                    LBracket => {
+                        self.advance();
+
+                        let size = match self.token {
+                            Int(size)  => size,
+                            _ => panic!("array size must be an int")
+                        };
+                        self.advance(); 
+
+                        if self.token != RBracket {
+                            panic!("expected ']'");
+                        }
+                        self.advance();
+
+                        Some(size)
+                    },
+                    _=>None
+                };
+
+               Node::Type(match array_size {
+                    Some(size) => Type::Array(literal,size),
+                    None => match literal {
+                        TypeLiteral::Int=>Type::Int,
+                        TypeLiteral::Float=>Type::Float,
+                        TypeLiteral::Bool=>Type::Bool,
+                        TypeLiteral::Str=>Type::Str,
+                        TypeLiteral::Char=>Type::Char,
+                        TypeLiteral::Void=>Type::Void
+                    }
+                })
             }
             Identifier(name) => {
                 self.advance();
@@ -289,6 +320,7 @@ impl Parser {
 
                 result
             }
+            LBracket => self.array_expr(),
             If => self.if_expr(),
             While => self.while_expr(),
             For => self.for_expr(),
@@ -299,10 +331,12 @@ impl Parser {
         match self.token {
             LBracket => {
                 self.advance();
-                let index = match self.expr() {
-                    Node::Int(index) => index as u32,
+
+                let index = match self.token {
+                    Int(index) => index as u32,
                     _ => panic!("an index must be an int"),
                 };
+                self.advance();
 
                 if self.token != RBracket {
                     panic!("expected ']'");
@@ -313,6 +347,17 @@ impl Parser {
             }
             _ => result,
         }
+    }
+
+    fn array_expr(&mut self) -> Node {
+        if self.token != LBracket {
+            panic!("expected '['");
+        }
+        self.advance();
+
+        let nodes = self.list(RBracket);
+
+        Node::Array(nodes)
     }
 
     fn if_expr(&mut self) -> Node {
@@ -432,7 +477,7 @@ impl Parser {
         }
         self.advance();
 
-        let mut args: Vec<(String, TypeLiteral)> = vec![];
+        let mut args: Vec<(String, Type)> = vec![];
 
         while self.token != RParen {
             let name = match &self.token {
@@ -446,11 +491,10 @@ impl Parser {
             }
             self.advance();
 
-            let literal = match &self.token {
-                Type(literal) => literal.clone(),
+            let ty = match self.atom() {
+                Node::Type(ty) => ty,
                 _ => panic!("expected a type"),
             };
-            self.advance();
 
             match &self.token {
                 Comma => self.advance(),
@@ -458,7 +502,7 @@ impl Parser {
                 _ => panic!("expected ',' or ')'"),
             };
 
-            args.push((name, literal));
+            args.push((name, ty));
         }
 
         if self.token != RParen {
@@ -469,15 +513,13 @@ impl Parser {
         let return_type = match self.token {
             Colon => {
                 self.advance();
-                match self.token.clone() {
-                    Type(literal) => {
-                        self.advance();
-                        literal
-                    }
+
+                match self.atom() {
+                    Node::Type(ty) => ty,
                     _ => panic!("expected type"),
                 }
             }
-            _ => TypeLiteral::Void,
+            _ => Type::Void,
         };
 
         let body = match self.token {
