@@ -30,6 +30,7 @@ atom:
 	| FLOAT
 	| BOOLEAN
 	| STRING
+	| CHAR
 	| IDENTIFIER
 	| '(' expr ')'
 	| array_expr
@@ -61,5 +62,6 @@ INT: [0-9]+;
 FLOAT: [0-9]+ '.' [0-9]*;
 BOOLEAN: 'true' | 'false';
 STRING: '"' .*? '"';
+CHAR: '\'' . '\'';
 TYPE: 'int' | 'float' | 'bool' | 'str' | 'char';
 IDENTIFIER: [a-zA-Z] [a-zA-Z0-9_]*;

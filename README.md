@@ -20,7 +20,7 @@
 - [x] `*` multiply
 - [x] `/` divide
 - [x] `%` remainder/modulo
-- [x] `^` exponentiation
+- [ ] `^` exponentiation
 - [ ] `!` factorial
 - [ ] `⌊⌋` floor
 - [ ] `⌈⌉` ceiling

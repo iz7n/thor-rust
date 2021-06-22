@@ -353,6 +353,31 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                         },
                         _ => unimplemented!(),
                     },
+                    Rem => match l_value {
+                        Value::Int(l) => match r_value {
+                            Value::Int(r) => {
+                                Value::Int(self.builder.build_int_unsigned_rem(l, r, "rem"))
+                            }
+                            Value::Float(r) => Value::Float(self.builder.build_float_rem(
+                                self.builder.build_signed_int_to_float(l, f64_type, "left"),
+                                r,
+                                "rem",
+                            )),
+                            _ => unimplemented!(),
+                        },
+                        Value::Float(l) => match r_value {
+                            Value::Int(r) => Value::Float(self.builder.build_float_rem(
+                                l,
+                                self.builder.build_signed_int_to_float(r, f64_type, "right"),
+                                "rem",
+                            )),
+                            Value::Float(r) => {
+                                Value::Float(self.builder.build_float_rem(l, r, "rem"))
+                            }
+                            _ => unimplemented!(),
+                        },
+                        _ => unimplemented!(),
+                    },
                     And => match l_value {
                         Value::Bool(l) => match r_value {
                             Value::Bool(r) => Value::Bool(self.builder.build_and(l, r, "and")),
@@ -605,6 +630,15 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                         Box::new(Node::Binary(
                             Box::new(Node::Identifier(name)),
                             BinaryOp::Div,
+                            node,
+                        )),
+                    )),
+                    Rem => self.visit(Node::IdentifierOp(
+                        name.clone(),
+                        Eq,
+                        Box::new(Node::Binary(
+                            Box::new(Node::Identifier(name)),
+                            BinaryOp::Rem,
                             node,
                         )),
                     )),

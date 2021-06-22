@@ -72,6 +72,7 @@ pub enum BinaryOp {
     Sub,
     Mul,
     Div,
+    Rem,
     And,
     Or,
     EqEq,
@@ -88,6 +89,7 @@ pub enum IdentifierOp {
     Sub,
     Mul,
     Div,
+    Rem,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -150,6 +152,7 @@ impl fmt::Display for Node {
                     Sub => write!(f, "({} - {})", left, right),
                     Mul => write!(f, "({} * {})", left, right),
                     Div => write!(f, "({} / {})", left, right),
+                    Rem => write!(f, "({} % {})", left, right),
                     And => write!(f, "({} and {})", left, right),
                     Or => write!(f, "({} or {})", left, right),
                     EqEq => write!(f, "({} == {})", left, right),
@@ -164,10 +167,11 @@ impl fmt::Display for Node {
                 use IdentifierOp::*;
                 match op {
                     Eq => write!(f, "({} = {})", name, node),
-                    Add => write!(f, "({} + {})", name, node),
-                    Sub => write!(f, "({} - {})", name, node),
-                    Mul => write!(f, "({} * {})", name, node),
-                    Div => write!(f, "({} / {})", name, node),
+                    Add => write!(f, "({} += {})", name, node),
+                    Sub => write!(f, "({} -= {})", name, node),
+                    Mul => write!(f, "({} *= {})", name, node),
+                    Div => write!(f, "({} /= {})", name, node),
+                    Rem => write!(f, "({} %= {})", name, node),
                 }
             }
             Node::Index(node, index) => write!(f, "{}[{}]", node, index),

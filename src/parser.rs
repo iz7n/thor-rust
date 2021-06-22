@@ -115,7 +115,8 @@ impl Parser {
             (AddEq, Add),
             (SubEq, Sub),
             (MulEq, Mul),
-            (DivEq, Div)
+            (DivEq, Div),
+            (RemEq, Rem)
         )
     }
 
@@ -200,6 +201,10 @@ impl Parser {
             Div => {
                 self.advance();
                 Node::Binary(Box::new(result), BinaryOp::Div, Box::new(self.term()))
+            }
+            Rem => {
+                self.advance();
+                Node::Binary(Box::new(result), BinaryOp::Rem, Box::new(self.term()))
             }
             _ => result,
         }

@@ -95,6 +95,16 @@ impl Lexer {
                         _ => Div,
                     }
                 }
+                '%' => {
+                    self.advance();
+                    match self.current_char {
+                        '=' => {
+                            self.advance();
+                            RemEq
+                        }
+                        _ => Rem,
+                    }
+                }
                 '<' => {
                     self.advance();
                     match self.current_char {
