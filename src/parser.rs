@@ -1,4 +1,4 @@
-use crate::{BinaryOp, IdentifierOp, Node, Token, Type, TypeLiteral, UnaryOp};
+use crate::{BinaryOp, IdentifierOp, Node, Token, UnaryOp};
 
 pub struct Parser {
     tokens: Vec<Token>,
@@ -236,16 +236,6 @@ impl Parser {
                         let args = self.list(RParen);
                         Node::Call(name, args)
                     }
-                    Node::Type(literal) => {
-                        let expr = self.expr();
-
-                        if self.token != RParen {
-                            panic!("expected ')'");
-                        }
-                        self.advance();
-
-                        Node::Cast(literal, Box::new(expr))
-                    }
                     _ => panic!("expected identifier or type"),
                 }
             }
@@ -274,41 +264,6 @@ impl Parser {
             Char(value) => {
                 self.advance();
                 Node::Char(value)
-            }
-            Ty(literal) => {
-                self.advance();
-
-                let array_size = match self.token {
-                    LBracket => {
-                        self.advance();
-
-                        let size = match self.token {
-                            Int(size)  => size,
-                            _ => panic!("array size must be an int")
-                        };
-                        self.advance(); 
-
-                        if self.token != RBracket {
-                            panic!("expected ']'");
-                        }
-                        self.advance();
-
-                        Some(size)
-                    },
-                    _=>None
-                };
-
-               Node::Type(match array_size {
-                    Some(size) => Type::Array(literal,size),
-                    None => match literal {
-                        TypeLiteral::Int=>Type::Int,
-                        TypeLiteral::Float=>Type::Float,
-                        TypeLiteral::Bool=>Type::Bool,
-                        TypeLiteral::Str=>Type::Str,
-                        TypeLiteral::Char=>Type::Char,
-                        TypeLiteral::Void=>Type::Void
-                    }
-                })
             }
             Identifier(name) => {
                 self.advance();
@@ -482,7 +437,7 @@ impl Parser {
         }
         self.advance();
 
-        let mut args: Vec<(String, Type)> = vec![];
+        let mut args: Vec<String> = vec![];
 
         while self.token != RParen {
             let name = match &self.token {
@@ -491,23 +446,13 @@ impl Parser {
             };
             self.advance();
 
-            if self.token != Colon {
-                panic!("expected ':'");
-            }
-            self.advance();
-
-            let ty = match self.atom() {
-                Node::Type(ty) => ty,
-                _ => panic!("expected a type"),
-            };
-
             match &self.token {
                 Comma => self.advance(),
                 RParen => {}
                 _ => panic!("expected ',' or ')'"),
             };
 
-            args.push((name, ty));
+            args.push(name);
         }
 
         if self.token != RParen {
@@ -515,24 +460,12 @@ impl Parser {
         }
         self.advance();
 
-        let return_type = match self.token {
-            Colon => {
-                self.advance();
-
-                match self.atom() {
-                    Node::Type(ty) => ty,
-                    _ => panic!("expected type"),
-                }
-            }
-            _ => Type::Void,
-        };
-
         let body = match self.token {
             LBrace => self.block(),
             _ => panic!("{}", "expected '{'"),
         };
 
-        Node::Fn(name.to_string(), args, return_type, Box::new(body))
+        Node::Fn(Some(name), args, Box::new(body))
     }
 
     fn list(&mut self, end: Token) -> Vec<Node> {

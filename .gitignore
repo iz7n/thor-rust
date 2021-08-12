@@ -1,5 +1,3 @@
 target/
-test.ll
-test.o
-test
 .antlr/
+.DS_Store

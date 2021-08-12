@@ -1,29 +1,5 @@
 use std::fmt;
 
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub enum TypeLiteral {
-    Int,
-    Float,
-    Bool,
-    Str,
-    Char,
-    Void,
-}
-
-impl fmt::Display for TypeLiteral {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use TypeLiteral::*;
-        match self {
-            Int => write!(f, "int"),
-            Float => write!(f, "float"),
-            Bool => write!(f, "bool"),
-            Str => write!(f, "str"),
-            Char => write!(f, "char"),
-            Void => write!(f, "void"),
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     Int(u32),
@@ -31,7 +7,6 @@ pub enum Token {
     Bool(bool),
     Str(String),
     Char(char),
-    Ty(TypeLiteral),
     Identifier(String),
     Eq,
     Add,
@@ -81,7 +56,6 @@ impl fmt::Display for Token {
             Bool(value) => write!(f, "{}", value),
             Str(value) => write!(f, "\"{}\"", value),
             Char(value) => write!(f, "'{}'", value),
-            Ty(literal) => write!(f, "{}", literal),
             Identifier(name) => write!(f, "{}", name),
             Eq => write!(f, "'='"),
             Add => write!(f, "'+'"),

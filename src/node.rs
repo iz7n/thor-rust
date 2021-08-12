@@ -1,65 +1,5 @@
 use std::fmt;
 
-use inkwell::{context::Context, types::BasicTypeEnum, AddressSpace};
-
-use crate::TypeLiteral;
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Type {
-    Int,
-    Float,
-    Bool,
-    Str,
-    Char,
-    Array(TypeLiteral, u32),
-    Void,
-}
-
-impl Type {
-    pub fn get_type<'ctx>(&self, context: &'ctx Context) -> BasicTypeEnum<'ctx> {
-        let int_type = context.i32_type();
-        let float_type = context.f64_type();
-        let bool_type = context.bool_type();
-        let str_type = context.i8_type().ptr_type(AddressSpace::Generic);
-        let char_type = context.i8_type();
-
-        match self {
-            Type::Int => BasicTypeEnum::IntType(int_type),
-            Type::Float => BasicTypeEnum::FloatType(float_type),
-            Type::Bool => BasicTypeEnum::IntType(bool_type),
-            Type::Str => BasicTypeEnum::PointerType(str_type),
-            Type::Char => BasicTypeEnum::IntType(char_type),
-            Type::Array(ty, size) => BasicTypeEnum::PointerType(
-                match ty {
-                    TypeLiteral::Int => int_type.array_type(*size),
-                    TypeLiteral::Float => float_type.array_type(*size),
-                    TypeLiteral::Bool => bool_type.array_type(*size),
-                    TypeLiteral::Str => str_type.array_type(*size),
-                    TypeLiteral::Char => char_type.array_type(*size),
-                    TypeLiteral::Void => panic!("can't have a void array"),
-                }
-                .ptr_type(AddressSpace::Generic),
-            ),
-            Type::Void => panic!("void isn't a valid argument type"),
-        }
-    }
-}
-
-impl fmt::Display for Type {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use Type::*;
-        match self {
-            Int => write!(f, "int"),
-            Float => write!(f, "float"),
-            Bool => write!(f, "bool"),
-            Str => write!(f, "str"),
-            Char => write!(f, "char"),
-            Array(ty, size) => write!(f, "{}[{}]", ty, size),
-            Void => write!(f, "void"),
-        }
-    }
-}
-
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum UnaryOp {
     Pos,
@@ -100,8 +40,7 @@ pub enum Node {
     Str(String),
     Char(char),
     Array(Vec<Node>),
-    Type(Type),
-    Cast(Type, Box<Node>),
+    Fn(Option<String>, Vec<String>, Box<Node>),
     Identifier(String),
     Unary(UnaryOp, Box<Node>),
     Binary(Box<Node>, BinaryOp, Box<Node>),
@@ -110,7 +49,6 @@ pub enum Node {
     If(Box<Node>, Box<Node>, Option<Box<Node>>),
     While(Box<Node>, Box<Node>),
     For(String, Box<Node>, Box<Node>),
-    Fn(String, Vec<(String, Type)>, Type, Box<Node>),
     Return(Box<Node>),
     Call(String, Vec<Node>),
     Statements(Vec<Node>),
@@ -134,8 +72,18 @@ impl fmt::Display for Node {
                     .collect::<Vec<String>>()
                     .join(", "),
             ),
-            Node::Type(ty) => write!(f, "{}", ty),
-            Node::Cast(literal, node) => write!(f, "{}({})", literal, node),
+            Node::Fn(name, args, body) => {
+                write!(
+                    f,
+                    "fn{}({}) -> {}",
+                    match name {
+                        Some(name) => format!(" {}", name),
+                        None => "".to_string(),
+                    },
+                    args.join(", "),
+                    body
+                )
+            }
             Node::Identifier(name) => write!(f, "{}", name),
             Node::Unary(op, node) => {
                 use UnaryOp::*;
@@ -182,19 +130,6 @@ impl fmt::Display for Node {
             Node::While(condition, body) => write!(f, "while {}: {}", condition, body),
             Node::For(identifier, iterable, body) => {
                 write!(f, "for {} in {}: {}", identifier, iterable, body)
-            }
-            Node::Fn(name, args, return_type, body) => {
-                write!(
-                    f,
-                    "fn {} ({}): {} -> {}",
-                    name,
-                    args.iter()
-                        .map(|(name, ty)| format!("{}: {}", name, ty))
-                        .collect::<Vec<String>>()
-                        .join(", "),
-                    return_type,
-                    body
-                )
             }
             Node::Return(node) => write!(f, "(return {})", node),
             Node::Call(name, args) => write!(

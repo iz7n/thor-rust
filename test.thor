@@ -1,4 +1,4 @@
-fn get_index(arr: int[3]): int {
+fn get_index(arr) {
     return arr[1]
 }
 

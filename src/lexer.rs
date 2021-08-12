@@ -1,4 +1,4 @@
-use crate::{Token, TypeLiteral};
+use crate::Token;
 use Token::*;
 
 pub struct Lexer {
@@ -264,11 +264,6 @@ impl Lexer {
         match word.as_str() {
             "true" => Bool(true),
             "false" => Bool(false),
-            "int" => Ty(TypeLiteral::Int),
-            "float" => Ty(TypeLiteral::Float),
-            "bool" => Ty(TypeLiteral::Bool),
-            "str" => Ty(TypeLiteral::Str),
-            "char" => Ty(TypeLiteral::Char),
             "not" => Not,
             "and" => And,
             "or" => Or,
