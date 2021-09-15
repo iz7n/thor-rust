@@ -43,7 +43,7 @@ impl<'ctx> Value<'ctx> {
                 }
                 .ptr_type(AddressSpace::Generic),
             ),
-            Void => panic!("void isn't a valid argument type"),
+            Void => panic!("void isn't a valid type"),
         }
     }
 
@@ -53,9 +53,9 @@ impl<'ctx> Value<'ctx> {
             Int(value) => BasicValueEnum::IntValue(*value),
             Float(value) => BasicValueEnum::FloatValue(*value),
             Bool(value) => BasicValueEnum::IntValue(*value),
-            Str(value) => BasicValueEnum::PointerValue(*value),
+            Str(ptr) => BasicValueEnum::PointerValue(*ptr),
             Char(value) => BasicValueEnum::IntValue(*value),
-            Array(value, _, _) => BasicValueEnum::PointerValue(*value),
+            Array(ptr, _, _) => BasicValueEnum::PointerValue(*ptr),
             Void => panic!("void isn't a valid value type"),
         }
     }

@@ -31,13 +31,7 @@ impl Parser {
         self.advance();
     }
 
-    fn next_token(&mut self) -> Token {
-        let next = self.tokens.get(self.index + 1);
-        match next {
-            Some(token) => token.clone(),
-            _ => EOF,
-        }
-    }
+    
 
     fn skip_newlines(&mut self) -> u32 {
         let mut newlines = 0u32;
@@ -83,6 +77,21 @@ impl Parser {
 
     pub fn statement(&mut self) -> Node {
         match self.token {
+            Let => {
+                self.advance();
+
+                let name = match self.token.clone() {
+                    Identifier(name) => name,
+                    _ => panic!("Expected identifier"),
+                };
+                self.advance();
+
+                if self.token != Eq {
+                    panic!("Expected '='");
+                }self.advance();
+
+                Node::Let(name,Box::new(self.expr()))
+            }
             Return => {
                 self.advance();
                 Node::Return(Box::new(self.expr()))
@@ -92,20 +101,18 @@ impl Parser {
     }
 
     fn expr(&mut self) -> Node {
+        let expr = self.or_expr();
+
         macro_rules! expr {
             ($(($token:tt, $op:tt)),*) => {
-                match self.token.clone() {
-                    Identifier(name) => match self.next_token() {
-                        $(
-                            $token => {
-                                self.advance();
-                                self.advance();
-                                Node::IdentifierOp(name, IdentifierOp::$op, Box::new(self.or_expr()))
-                            }
-                        )*
-                        _ => self.or_expr(),
-                    },
-                    _ => self.or_expr(),
+                match self.token {
+                    $(
+                        $token => {
+                            self.advance();
+                            Node::IdentifierOp(Box::new(expr), IdentifierOp::$op, Box::new(self.or_expr()))
+                        }
+                    )*,
+                    _ => expr,
                 }
             };
         }
@@ -334,22 +341,7 @@ impl Parser {
             _ => panic!("expected int, float, bool, str, type, identifier, '(', 'if', 'while', 'for', or 'fn'"),
         };
         match self.token {
-            LBracket => {
-                self.advance();
-
-                let index = match self.token {
-                    Int(index) => index as u32,
-                    _ => panic!("an index must be an int"),
-                };
-                self.advance();
-
-                if self.token != RBracket {
-                    panic!("expected ']'");
-                }
-                self.advance();
-
-                Node::Index(Box::new(result), index)
-            }
+            LBracket => Node::Index(Box::new(result), Box::new(self.index())),
             _ => result,
         }
     }
@@ -569,5 +561,21 @@ impl Parser {
         self.advance();
 
         statements
+    }
+
+    fn index(&mut self) -> Node {
+        if self.token != LBracket {
+            panic!("{}", "expected '{'");
+        }
+        self.advance();
+
+        let node = self.expr();
+
+        if self.token != RBracket {
+            panic!("expected ']'");
+        }
+        self.advance();
+
+        node
     }
 }

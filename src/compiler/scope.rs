@@ -23,6 +23,16 @@ impl<'a, 'ctx> Scope<'a, 'ctx> {
         }
     }
 
+    pub fn get_ptr(&self, name: &str, builder: &Builder<'ctx>) -> PointerValue<'ctx> {
+        match self.variables.get(name) {
+            Some((ptr, _)) => *ptr,
+            None => match self.parent {
+                Some(parent) => parent.get_ptr(name, builder),
+                None => panic!("{} is not defined", name),
+            },
+        }
+    }
+
     pub fn get(&self, name: &str, builder: &Builder<'ctx>) -> Value<'ctx> {
         match self.variables.get(name) {
             Some((ptr, ty)) => match ty {

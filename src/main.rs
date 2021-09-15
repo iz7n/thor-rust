@@ -26,9 +26,9 @@ fn main() {
 
     match args.len() {
         1 => panic!("Too few many arguments passed"),
-        2 => compile_file(&args[1], "output.o", false),
+        2 => compile_file(&args[1], "output", false),
         3 => match args[2].as_str() {
-            "--log" => compile_file(&args[1], "output.o", true),
+            "--log" => compile_file(&args[1], "output", true),
             out_filename => compile_file(&args[1], out_filename, false),
         },
         4 => match args[3].as_str() {
@@ -72,10 +72,12 @@ fn compile(text: String, filename: &str, out_filename: &str, log: bool) {
         Ok(_) => {}
         Err(err) => eprintln!("{}", err.to_string()),
     };
-    codegen
-        .module
-        .print_to_file(format!("{}.ll", out_filename))
-        .unwrap();
+    if log {
+        codegen
+            .module
+            .print_to_file(format!("{}.ll", out_filename))
+            .unwrap();
+    }
 
     Target::initialize_all(&InitializationConfig::default());
     let triple = TargetMachine::get_default_triple();

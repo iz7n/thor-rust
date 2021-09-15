@@ -591,86 +591,100 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                     },
                 }
             }
+            Node::Let(name, node) => {
+                let value = self.visit(*node);
+                self.scope.set(name, value, &self.context, &self.builder)
+            }
             Node::IdentifierOp(name, op, node) => {
+                let ptr = match *name.clone() {
+                    Node::Identifier(name) => self.scope.get_ptr(&name, &self.builder),
+                    Node::Index(name, index) => match *name {
+                        Node::Identifier(name) => {
+                            let list_ptr = self.scope.get_ptr(&name, &self.builder);
+                            let index = self.visit(*index);
+                            unsafe {
+                                self.builder.build_gep(
+                                    list_ptr,
+                                    &[match index {
+                                        Value::Int(value) => value,
+                                        _ => unimplemented!(),
+                                    }],
+                                    "index",
+                                )
+                            }
+                        }
+                        _ => unimplemented!(),
+                    },
+                    _ => unimplemented!(),
+                };
                 let value = self.visit(*node.clone());
 
                 use IdentifierOp::*;
-                match op {
-                    Eq => self.scope.set(name, value, &self.context, &self.builder),
-                    Add => self.visit(Node::IdentifierOp(
-                        name.clone(),
-                        Eq,
-                        Box::new(Node::Binary(
-                            Box::new(Node::Identifier(name)),
-                            BinaryOp::Add,
-                            node,
-                        )),
-                    )),
-                    Sub => self.visit(Node::IdentifierOp(
-                        name.clone(),
-                        Eq,
-                        Box::new(Node::Binary(
-                            Box::new(Node::Identifier(name)),
-                            BinaryOp::Sub,
-                            node,
-                        )),
-                    )),
-                    Mul => self.visit(Node::IdentifierOp(
-                        name.clone(),
-                        Eq,
-                        Box::new(Node::Binary(
-                            Box::new(Node::Identifier(name)),
-                            BinaryOp::Mul,
-                            node,
-                        )),
-                    )),
-                    Div => self.visit(Node::IdentifierOp(
-                        name.clone(),
-                        Eq,
-                        Box::new(Node::Binary(
-                            Box::new(Node::Identifier(name)),
-                            BinaryOp::Div,
-                            node,
-                        )),
-                    )),
-                    Rem => self.visit(Node::IdentifierOp(
-                        name.clone(),
-                        Eq,
-                        Box::new(Node::Binary(
-                            Box::new(Node::Identifier(name)),
-                            BinaryOp::Rem,
-                            node,
-                        )),
-                    )),
+
+                macro_rules! identifier_op {
+                    ($($op:tt),*) => {
+                        match op {
+                            Eq=>{
+                                self.builder.build_store(ptr,value.get_value());
+                                value
+                            },
+                            $(
+                                $op => self.visit(Node::IdentifierOp(
+                                    name.clone(),
+                                    $op,
+                                    Box::new(Node::Binary(
+                                        name,
+                                        BinaryOp::$op,
+                                        node,
+                                    )),
+                                )),
+                            )*
+                        }
+                    };
                 }
+
+                identifier_op!(Add, Sub, Mul, Div, Rem)
             }
             Node::Index(node, index) => {
-                let value = self.visit(*node);
+                let value = self.visit(*node.clone());
+                let index = self.visit(*index);
                 match value {
-                    Value::Str(value) => Value::Char({
-                        let chars = self.builder.build_load(value, "str").into_array_value();
-                        match self.builder.build_extract_value(chars, index, "index") {
-                            Some(value) => value.into_int_value(),
-                            None => self.context.i8_type().const_zero(),
-                        }
-                    }),
-                    Value::Array(value, ty, _) => {
-                        let array = self.builder.build_load(value, "array").into_array_value();
-                        let item = self.builder.build_extract_value(array, index, "index");
-                        println!("ITEM: {:#?}", item);
-                        match item {
-                            Some(value) => match ty {
-                                TypeLiteral::Int => Value::Int(value.into_int_value()),
-                                TypeLiteral::Float => Value::Float(value.into_float_value()),
-                                TypeLiteral::Bool => Value::Bool(value.into_int_value()),
-                                TypeLiteral::Str => Value::Str(value.into_pointer_value()),
-                                TypeLiteral::Char => Value::Char(value.into_int_value()),
-                                TypeLiteral::Void => panic!("can't have a void array"),
-                            },
-                            None => panic!("failed to index array"),
+                    Value::Str(ptr) => {
+                        let index_ptr = unsafe {
+                            self.builder.build_gep(
+                                ptr,
+                                &[match index {
+                                    Value::Int(value) => value,
+                                    _ => unimplemented!(),
+                                }],
+                                "index",
+                            )
+                        };
+                        let item_value = self.builder.build_load(index_ptr, "index");
+                        Value::Char(item_value.into_int_value())
+                    }
+                    Value::Array(ptr, ty, _) => {
+                        let index_ptr = unsafe {
+                            self.builder.build_gep(
+                                ptr,
+                                &[match index {
+                                    Value::Int(value) => value,
+                                    _ => unimplemented!(),
+                                }],
+                                "index",
+                            )
+                        };
+                        let item_value = self.builder.build_load(index_ptr, "index");
+                        match ty {
+                            TypeLiteral::Int => Value::Int(item_value.into_int_value()),
+                            TypeLiteral::Float => Value::Float(item_value.into_float_value()),
+                            TypeLiteral::Bool => Value::Bool(item_value.into_int_value()),
+                            TypeLiteral::Str => Value::Str(item_value.into_pointer_value()),
+                            TypeLiteral::Char => Value::Char(item_value.into_int_value()),
+                            TypeLiteral::Void => panic!("can't have a void array"),
                         }
                     }
-                    _ => panic!("index {} is out of bounds", index),
+                    _ => panic!("cannot index {}", node),
                 }
             }
             Node::While(condition, body) => {
@@ -963,4 +977,3 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
         }
     }
 }
-// weekendvibes

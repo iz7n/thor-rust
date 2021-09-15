@@ -2,7 +2,7 @@ grammar Thor;
 
 statements: '\n'* statement ('\n'+ statement)* '\n'*;
 
-statement: 'return'? expr;
+statement: ('let' | 'return')? expr;
 
 expr:
 	| (IDENTIFIER (('+' | '-' | '*' | '/')? '=') expr)

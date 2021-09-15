@@ -269,6 +269,7 @@ impl Lexer {
             "bool" => Ty(TypeLiteral::Bool),
             "str" => Ty(TypeLiteral::Str),
             "char" => Ty(TypeLiteral::Char),
+            "let" => Let,
             "not" => Not,
             "and" => And,
             "or" => Or,

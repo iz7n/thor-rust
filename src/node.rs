@@ -105,8 +105,9 @@ pub enum Node {
     Identifier(String),
     Unary(UnaryOp, Box<Node>),
     Binary(Box<Node>, BinaryOp, Box<Node>),
-    IdentifierOp(String, IdentifierOp, Box<Node>),
-    Index(Box<Node>, u32),
+    Let(String, Box<Node>),
+    IdentifierOp(Box<Node>, IdentifierOp, Box<Node>),
+    Index(Box<Node>, Box<Node>),
     If(Box<Node>, Box<Node>, Option<Box<Node>>),
     While(Box<Node>, Box<Node>),
     For(String, Box<Node>, Box<Node>),
@@ -163,6 +164,7 @@ impl fmt::Display for Node {
                     Gte => write!(f, "({} >= {})", left, right),
                 }
             }
+            Node::Let(name, node) => write!(f, "let {} = {}", name, node),
             Node::IdentifierOp(name, op, node) => {
                 use IdentifierOp::*;
                 match op {
