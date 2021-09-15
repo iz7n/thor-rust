@@ -2,13 +2,13 @@ use inkwell::{
     builder::Builder,
     context::Context,
     module::Module,
-    types::BasicTypeEnum,
+    types::{BasicTypeEnum, FloatType, IntType, PointerType},
     values::{BasicValueEnum, FloatValue, FunctionValue, IntValue, PointerValue},
     AddressSpace, FloatPredicate, IntPredicate,
 };
 
 use crate::{
-    compiler::{Scope, Value},
+    compiler::{Function, Scope, Value},
     BinaryOp, IdentifierOp, Node, Type, TypeLiteral, UnaryOp,
 };
 
@@ -18,6 +18,12 @@ pub struct Codegen<'a, 'ctx> {
     pub builder: Builder<'ctx>,
     pub function: FunctionValue<'ctx>,
     pub scope: Scope<'a, 'ctx>,
+
+    pub int_type: IntType<'ctx>,
+    pub float_type: FloatType<'ctx>,
+    pub bool_type: IntType<'ctx>,
+    pub char_type: IntType<'ctx>,
+    pub str_type: PointerType<'ctx>,
 }
 
 impl<'a, 'ctx> Codegen<'a, 'ctx> {
@@ -29,12 +35,12 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
     ) -> Self {
         module.set_source_file_name(filename);
 
-        let i32_type = context.i32_type();
+        let int_type = context.i32_type();
         let str_type = context.i8_type().ptr_type(AddressSpace::Generic);
 
-        let fn_type = i32_type.fn_type(
+        let fn_type = int_type.fn_type(
             &[
-                BasicTypeEnum::IntType(i32_type),
+                BasicTypeEnum::IntType(int_type),
                 BasicTypeEnum::PointerType(str_type),
             ],
             false,
@@ -49,8 +55,15 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
             builder,
             function,
             scope: Scope::new(None),
+
+            int_type,
+            float_type: context.f64_type(),
+            bool_type: context.bool_type(),
+            char_type: context.i8_type(),
+            str_type,
         };
-        codegen.add_printf();
+        codegen.print();
+        codegen.math();
         codegen
     }
 
@@ -61,31 +74,39 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
             builder: self.context.create_builder(),
             function,
             scope: Scope::new(Some(&self.scope)),
+
+            int_type: self.int_type,
+            float_type: self.float_type,
+            bool_type: self.bool_type,
+            char_type: self.char_type,
+            str_type: self.str_type,
         }
     }
 
     pub fn generate_llvm_ir(&mut self, ast: Node) {
         self.visit(ast);
-        self.builder
-            .build_return(Some(&self.context.i32_type().const_zero()));
+        self.builder.build_return(Some(&self.int_type.const_zero()));
+    }
+
+    pub fn add_var(&mut self, name: &str, value: Value<'ctx>) {
+        self.scope
+            .set(name.to_string(), value, &self.context, &self.builder);
     }
 
     fn visit(&mut self, node: Node) -> Value<'ctx> {
         match node {
-            Node::Int(value) => Value::Int(self.context.i32_type().const_int(value as u64, true)),
-            Node::Float(value) => Value::Float(self.context.f64_type().const_float(value)),
-            Node::Bool(value) => Value::Bool(
-                self.context
-                    .bool_type()
-                    .const_int(if value { 1 } else { 0 }, false),
-            ),
+            Node::Int(value) => Value::Int(self.int_type.const_int(value as u64, true)),
+            Node::Float(value) => Value::Float(self.float_type.const_float(value)),
+            Node::Bool(value) => {
+                Value::Bool(self.bool_type.const_int(if value { 1 } else { 0 }, false))
+            }
             Node::Str(value) => Value::Str({
                 let string = self.context.const_string(value.as_bytes(), true);
                 let ptr = self.builder.build_alloca(string.get_type(), "str");
                 self.builder.build_store(ptr, string);
                 ptr
             }),
-            Node::Char(value) => Value::Char(self.context.i8_type().const_int(value as u64, false)),
+            Node::Char(value) => Value::Char(self.char_type.const_int(value as u64, false)),
             Node::Array(nodes) => {
                 let size = nodes.len() as u32;
                 let mut ty = TypeLiteral::Int;
@@ -104,42 +125,36 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                     values.push(value.get_value());
                 }
 
-                let int_type = self.context.i32_type();
-                let float_type = self.context.f64_type();
-                let bool_type = self.context.bool_type();
-                let str_type = self.context.i8_type().ptr_type(AddressSpace::Generic);
-                let char_type = self.context.i8_type();
-
                 let array = match ty {
-                    TypeLiteral::Int => int_type.const_array(
+                    TypeLiteral::Int => self.int_type.const_array(
                         values
                             .iter()
                             .map(|value| value.into_int_value())
                             .collect::<Vec<IntValue<'ctx>>>()
                             .as_slice(),
                     ),
-                    TypeLiteral::Float => float_type.const_array(
+                    TypeLiteral::Float => self.float_type.const_array(
                         values
                             .iter()
                             .map(|value| value.into_float_value())
                             .collect::<Vec<FloatValue<'ctx>>>()
                             .as_slice(),
                     ),
-                    TypeLiteral::Bool => bool_type.const_array(
+                    TypeLiteral::Bool => self.bool_type.const_array(
                         values
                             .iter()
                             .map(|value| value.into_int_value())
                             .collect::<Vec<IntValue<'ctx>>>()
                             .as_slice(),
                     ),
-                    TypeLiteral::Str => str_type.const_array(
+                    TypeLiteral::Str => self.str_type.const_array(
                         values
                             .iter()
                             .map(|value| value.into_pointer_value())
                             .collect::<Vec<PointerValue<'ctx>>>()
                             .as_slice(),
                     ),
-                    TypeLiteral::Char => char_type.const_array(
+                    TypeLiteral::Char => self.char_type.const_array(
                         values
                             .iter()
                             .map(|value| value.into_int_value())
@@ -149,23 +164,28 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                     TypeLiteral::Void => unreachable!(),
                 };
 
-                let size_value = int_type.const_int(size as u64, false);
+                let size_value = self.int_type.const_int(size as u64, false);
                 let ptr = match ty {
-                    TypeLiteral::Int => self
-                        .builder
-                        .build_array_alloca(int_type, size_value, "array"),
-                    TypeLiteral::Float => self
-                        .builder
-                        .build_array_alloca(float_type, size_value, "array"),
-                    TypeLiteral::Bool => self
-                        .builder
-                        .build_array_alloca(bool_type, size_value, "array"),
-                    TypeLiteral::Str => self
-                        .builder
-                        .build_array_alloca(str_type, size_value, "array"),
-                    TypeLiteral::Char => self
-                        .builder
-                        .build_array_alloca(char_type, size_value, "array"),
+                    TypeLiteral::Int => {
+                        self.builder
+                            .build_array_alloca(self.int_type, size_value, "array")
+                    }
+                    TypeLiteral::Float => {
+                        self.builder
+                            .build_array_alloca(self.float_type, size_value, "array")
+                    }
+                    TypeLiteral::Bool => {
+                        self.builder
+                            .build_array_alloca(self.bool_type, size_value, "array")
+                    }
+                    TypeLiteral::Str => {
+                        self.builder
+                            .build_array_alloca(self.str_type, size_value, "array")
+                    }
+                    TypeLiteral::Char => {
+                        self.builder
+                            .build_array_alloca(self.char_type, size_value, "array")
+                    }
                     TypeLiteral::Void => unreachable!(),
                 };
                 self.builder.build_store(ptr, array);
@@ -175,33 +195,34 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
             Node::Cast(ty, node) => {
                 let value = self.visit(*node);
 
-                let int_type = self.context.i32_type();
-                let float_type = self.context.f64_type();
-                let bool_type = self.context.bool_type();
-
                 match ty {
                     Type::Int => Value::Int(match value {
                         Value::Int(value) | Value::Bool(value) => value,
-                        Value::Float(value) => self
-                            .builder
-                            .build_float_to_signed_int(value, int_type, "int"),
+                        Value::Float(value) => {
+                            self.builder
+                                .build_float_to_signed_int(value, self.int_type, "int")
+                        }
                         _ => unimplemented!(),
                     }),
                     Type::Float => Value::Float(match value {
-                        Value::Int(value) => self
-                            .builder
-                            .build_signed_int_to_float(value, float_type, "float"),
+                        Value::Int(value) => {
+                            self.builder
+                                .build_signed_int_to_float(value, self.float_type, "float")
+                        }
                         Value::Float(value) => value,
-                        Value::Bool(value) => self
-                            .builder
-                            .build_unsigned_int_to_float(value, float_type, "float"),
+                        Value::Bool(value) => self.builder.build_unsigned_int_to_float(
+                            value,
+                            self.float_type,
+                            "float",
+                        ),
                         _ => unimplemented!(),
                     }),
                     Type::Bool => Value::Bool(match value {
                         Value::Int(value) | Value::Bool(value) => value,
-                        Value::Float(value) => self
-                            .builder
-                            .build_float_to_unsigned_int(value, bool_type, "bool"),
+                        Value::Float(value) => {
+                            self.builder
+                                .build_float_to_unsigned_int(value, self.bool_type, "bool")
+                        }
                         _ => unimplemented!(),
                     }),
                     Type::Str => Value::Str(match value {
@@ -232,19 +253,19 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                         Value::Int(value) => Value::Bool(self.builder.build_int_compare(
                             IntPredicate::EQ,
                             value,
-                            self.context.i32_type().const_zero(),
+                            self.int_type.const_zero(),
                             "not",
                         )),
                         Value::Float(value) => Value::Bool(self.builder.build_float_compare(
                             FloatPredicate::OEQ,
                             value,
-                            self.context.f64_type().const_zero(),
+                            self.float_type.const_zero(),
                             "not",
                         )),
                         Value::Bool(value) => Value::Bool(self.builder.build_int_compare(
                             IntPredicate::EQ,
                             value,
-                            self.context.bool_type().const_zero(),
+                            self.bool_type.const_zero(),
                             "not",
                         )),
                         _ => unimplemented!(),
@@ -255,7 +276,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                 let l_value = self.visit(*left);
                 let r_value = self.visit(*right);
 
-                let f64_type = self.context.f64_type();
+                let f64_type = self.float_type;
 
                 use BinaryOp::*;
                 match op {
@@ -709,7 +730,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
 
                 self.builder.position_at_end(end_block);
 
-                Value::Int(self.context.i32_type().const_zero())
+                Value::Int(self.int_type.const_zero())
             }
             Node::If(condition, body, else_case) => {
                 let condition_value = match self.visit(*condition) {
@@ -782,60 +803,24 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
 
                         self.builder.position_at_end(end_block);
 
-                        Value::Int(self.context.i32_type().const_zero())
+                        Value::Int(self.int_type.const_zero())
                     }
                 }
             }
             Node::Fn(name, args, return_type, body) => {
-                let int_type = self.context.i32_type();
-                let float_type = self.context.f64_type();
-                let bool_type = self.context.bool_type();
-                let str_type = self.context.i8_type().ptr_type(AddressSpace::Generic);
-                let char_type = self.context.i8_type();
-                let void_type = self.context.void_type();
+                let arg_types = args.iter().map(|(_, ty)| ty.clone()).collect::<Vec<Type>>();
 
-                macro_rules! make_args {
-                    () => {
-                        args.iter()
-                            .map(|(_, ty)| ty.get_type(self.context))
-                            .collect::<Vec<BasicTypeEnum>>()
-                            .as_slice()
-                    };
-                }
-
-                let fn_type = match return_type {
-                    Type::Int => int_type.fn_type(make_args!(), false),
-                    Type::Float => float_type.fn_type(make_args!(), false),
-                    Type::Bool => bool_type.fn_type(make_args!(), false),
-                    Type::Str => str_type.fn_type(make_args!(), false),
-                    Type::Char => char_type.fn_type(make_args!(), false),
-                    Type::Array(ty, size) => match ty {
-                        TypeLiteral::Int => int_type.array_type(size).fn_type(make_args!(), false),
-                        TypeLiteral::Float => {
-                            float_type.array_type(size).fn_type(make_args!(), false)
-                        }
-                        TypeLiteral::Bool => {
-                            bool_type.array_type(size).fn_type(make_args!(), false)
-                        }
-                        TypeLiteral::Str => str_type.array_type(size).fn_type(make_args!(), false),
-                        TypeLiteral::Char => {
-                            char_type.array_type(size).fn_type(make_args!(), false)
-                        }
-                        TypeLiteral::Void => panic!("can't have a void array"),
-                    },
-                    Type::Void => void_type.fn_type(make_args!(), false),
-                };
-                let function = self.module.add_function(&name, fn_type, None);
-                let block = self.context.append_basic_block(function, "body");
+                let function = Function::new_user(&name, arg_types, return_type.clone(), self);
+                let block = self.context.append_basic_block(function.value, "body");
 
                 let mut codegen = self.create_child(self.function);
                 codegen.builder.position_at_end(block);
                 args.iter().enumerate().for_each(|(i, (arg_name, ty))| {
                     let arg_name = arg_name.clone();
-                    let value = function.get_nth_param(i as u32).unwrap();
+                    let value = function.value.get_nth_param(i as u32).unwrap();
                     match ty {
                         Type::Int => {
-                            let val_ptr = codegen.builder.build_alloca(int_type, &arg_name);
+                            let val_ptr = codegen.builder.build_alloca(self.int_type, &arg_name);
                             codegen
                                 .scope
                                 .variables
@@ -843,7 +828,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                             codegen.builder.build_store(val_ptr, value.into_int_value());
                         }
                         Type::Float => {
-                            let val_ptr = codegen.builder.build_alloca(float_type, &arg_name);
+                            let val_ptr = codegen.builder.build_alloca(self.float_type, &arg_name);
                             codegen
                                 .scope
                                 .variables
@@ -853,7 +838,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                                 .build_store(val_ptr, value.into_float_value());
                         }
                         Type::Bool => {
-                            let val_ptr = codegen.builder.build_alloca(bool_type, &arg_name);
+                            let val_ptr = codegen.builder.build_alloca(self.bool_type, &arg_name);
                             codegen
                                 .scope
                                 .variables
@@ -867,7 +852,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                                 .insert(arg_name, (value.into_pointer_value(), Type::Str));
                         }
                         Type::Char => {
-                            let val_ptr = codegen.builder.build_alloca(bool_type, &arg_name);
+                            let val_ptr = codegen.builder.build_alloca(self.char_type, &arg_name);
                             codegen
                                 .scope
                                 .variables
@@ -889,9 +874,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                     codegen.builder.build_return(None);
                 }
 
-                self.scope.add_function(name, function, return_type);
-
-                Value::Int(int_type.const_zero())
+                Value::Int(self.int_type.const_zero())
             }
             Node::Return(node) => {
                 let value = self.visit(*node);
@@ -904,70 +887,38 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
                     Value::Array(value, _, _) => value,
                     Value::Void => panic!("void isn't a valid type"),
                 }));
-                Value::Int(self.context.i32_type().const_zero())
+                Value::Int(self.int_type.const_zero())
             }
             Node::Call(name, args) => {
-                let mut compiled_args: Vec<Value<'ctx>> = vec![];
-                for arg in args {
-                    compiled_args.push(self.visit(arg));
+                let mut arg_values = args
+                    .iter()
+                    .map(|arg| self.visit(arg.clone()))
+                    .collect::<Vec<Value<'ctx>>>();
+
+                let function = self.scope.get_function(&name);
+                if name == "print" {
+                    arg_values.insert(
+                        0,
+                        Value::Str(
+                            self.generate_printf_format_string(&arg_values)
+                                .into_pointer_value(),
+                        ),
+                    );
                 }
 
-                let fn_value = self.scope.get_function(&name);
-                match fn_value {
-                    (function, return_type) => {
-                        let format_string = self.generate_printf_format_string(&compiled_args);
-
-                        let mut argsv: Vec<BasicValueEnum<'ctx>> = vec![];
-                        for val in compiled_args {
-                            argsv.push(match val {
-                                Value::Int(value) => value.into(),
-                                Value::Float(value) => value.into(),
-                                Value::Bool(value) => value.into(),
-                                Value::Str(value) => value.into(),
-                                Value::Char(value) => value.into(),
-                                Value::Array(value, _, _) => value.into(),
-                                Value::Void => panic!("void isn't a valid type"),
-                            });
-                        }
-
-                        if name == "print" {
-                            argsv.insert(0, format_string);
-                        }
-
-                        match self
-                            .builder
-                            .build_call(
-                                *function,
-                                argsv.as_slice(),
-                                match name.as_str() {
-                                    "print" => "printf",
-                                    _ => &name,
-                                },
-                            )
-                            .try_as_basic_value()
-                            .left()
-                        {
-                            Some(value) => match return_type {
-                                Type::Int => Value::Int(value.into_int_value()),
-                                Type::Float => Value::Float(value.into_float_value()),
-                                Type::Bool => Value::Bool(value.into_int_value()),
-                                Type::Str => Value::Str(value.into_pointer_value()),
-                                Type::Char => Value::Char(value.into_int_value()),
-                                Type::Array(ty, size) => {
-                                    Value::Array(value.into_pointer_value(), *ty, *size)
-                                }
-                                Type::Void => unreachable!(),
-                            },
-                            None => match return_type {
-                                Type::Void => Value::Void,
-                                _ => panic!("Invalid call to {}", name),
-                            },
-                        }
-                    }
+                let value = function.call(arg_values, &self.builder);
+                match function.return_type {
+                    Type::Int => Value::Int(value.into_int_value()),
+                    Type::Float => Value::Float(value.into_float_value()),
+                    Type::Bool => Value::Bool(value.into_int_value()),
+                    Type::Str => Value::Str(value.into_pointer_value()),
+                    Type::Char => Value::Char(value.into_int_value()),
+                    Type::Array(ty, size) => Value::Array(value.into_pointer_value(), ty, size),
+                    Type::Void => Value::Void,
                 }
             }
             Node::Statements(nodes) => {
-                let mut rtn_value = Value::Int(self.context.i32_type().const_zero());
+                let mut rtn_value = Value::Int(self.int_type.const_zero());
                 for node in nodes {
                     rtn_value = self.visit(node);
                 }

@@ -15,7 +15,7 @@ mod node;
 mod parser;
 mod token;
 
-use compiler::Codegen;
+pub use compiler::{Codegen, Function};
 pub use lexer::Lexer;
 pub use node::{BinaryOp, IdentifierOp, Node, Type, UnaryOp};
 pub use parser::Parser;

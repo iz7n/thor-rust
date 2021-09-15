@@ -1,16 +1,15 @@
 use std::collections::HashMap;
 
-use inkwell::{
-    builder::Builder,
-    context::Context,
-    values::{FunctionValue, PointerValue},
-};
+use inkwell::{builder::Builder, context::Context, values::PointerValue};
 
-use crate::{compiler::Value, Type};
+use crate::{
+    compiler::{Function, Value},
+    Type,
+};
 
 pub struct Scope<'a, 'ctx> {
     pub variables: HashMap<String, (PointerValue<'ctx>, Type)>,
-    functions: HashMap<String, (FunctionValue<'ctx>, Type)>,
+    functions: HashMap<String, Function<'ctx>>,
     parent: Option<&'a Scope<'a, 'ctx>>,
 }
 
@@ -121,11 +120,11 @@ impl<'a, 'ctx> Scope<'a, 'ctx> {
         value
     }
 
-    pub fn add_function(&mut self, name: String, function: FunctionValue<'ctx>, return_type: Type) {
-        self.functions.insert(name, (function, return_type));
+    pub fn add_function(&mut self, name: String, function: Function<'ctx>) {
+        self.functions.insert(name, function);
     }
 
-    pub fn get_function(&self, name: &str) -> &(FunctionValue<'ctx>, Type) {
+    pub fn get_function(&self, name: &str) -> &Function<'ctx> {
         match self.functions.get(name) {
             Some(value) => value,
             None => match self.parent {

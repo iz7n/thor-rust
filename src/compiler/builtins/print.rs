@@ -1,27 +1,13 @@
-use inkwell::{module::Linkage, types::BasicTypeEnum, values::BasicValueEnum};
+use inkwell::values::BasicValueEnum;
 
 use crate::{
-    compiler::{Codegen, Value},
+    compiler::{Codegen, Function, Value},
     Type,
 };
 
 impl<'a, 'ctx> Codegen<'a, 'ctx> {
-    pub fn add_printf(&mut self) {
-        let i32_type = self.context.i32_type();
-        let str_type = self
-            .context
-            .i8_type()
-            .ptr_type(inkwell::AddressSpace::Generic);
-        let printf_args_type = &[BasicTypeEnum::PointerType(str_type)];
-
-        let printf_type = i32_type.fn_type(printf_args_type, true);
-
-        let printf_fn = self
-            .module
-            .add_function("printf", printf_type, Some(Linkage::External));
-
-        self.scope
-            .add_function("print".to_string(), printf_fn, Type::Int);
+    pub fn print(&mut self) {
+        Function::new_llvm("print", "printf", &[Type::Str], true, Type::Int, self);
     }
 
     pub fn generate_printf_format_string(
@@ -47,7 +33,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
 
         BasicValueEnum::PointerValue(
             self.builder
-                .build_global_string_ptr(format_string.as_str(), "format_string")
+                .build_global_string_ptr(format_string.as_str(), "printf_format_string")
                 .as_pointer_value(),
         )
     }
