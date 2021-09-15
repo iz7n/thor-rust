@@ -87,7 +87,7 @@ fn compile(text: String, filename: &str, out_filename: &str, log: bool) {
             &triple,
             "generic",
             "",
-            OptimizationLevel::None,
+            OptimizationLevel::Aggressive,
             RelocMode::Default,
             CodeModel::Default,
         )
