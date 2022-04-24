@@ -1,8 +1,8 @@
 use inkwell::{
     builder::Builder,
     module::Linkage,
-    types::BasicTypeEnum,
-    values::{BasicValueEnum, FunctionValue},
+    types::BasicMetadataTypeEnum,
+    values::{BasicMetadataValueEnum, BasicValueEnum, FunctionValue},
     AddressSpace,
 };
 
@@ -56,8 +56,8 @@ impl<'ctx> Function<'ctx> {
         let context = codegen.context;
         let arg_types = arg_types
             .iter()
-            .map(|ty| ty.get_type(context))
-            .collect::<Vec<BasicTypeEnum<'ctx>>>();
+            .map(|ty| ty.get_type(context).into())
+            .collect::<Vec<BasicMetadataTypeEnum<'ctx>>>();
         let fn_type = match return_type {
             Type::Int => context.i32_type().fn_type(&arg_types, var_args),
             Type::Float => context.f32_type().fn_type(&arg_types, var_args),
@@ -82,8 +82,8 @@ impl<'ctx> Function<'ctx> {
                 self.value,
                 values
                     .iter()
-                    .map(|value| value.get_value())
-                    .collect::<Vec<BasicValueEnum>>()
+                    .map(|value| value.get_value().into())
+                    .collect::<Vec<BasicMetadataValueEnum>>()
                     .as_slice(),
                 "call",
             )

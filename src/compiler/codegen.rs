@@ -2,7 +2,7 @@ use inkwell::{
     builder::Builder,
     context::Context,
     module::Module,
-    types::{BasicTypeEnum, FloatType, IntType, PointerType},
+    types::{FloatType, IntType, PointerType},
     values::{BasicValueEnum, FloatValue, FunctionValue, IntValue, PointerValue},
     AddressSpace, FloatPredicate, IntPredicate,
 };
@@ -38,13 +38,7 @@ impl<'a, 'ctx> Codegen<'a, 'ctx> {
         let int_type = context.i32_type();
         let str_type = context.i8_type().ptr_type(AddressSpace::Generic);
 
-        let fn_type = int_type.fn_type(
-            &[
-                BasicTypeEnum::IntType(int_type),
-                BasicTypeEnum::PointerType(str_type),
-            ],
-            false,
-        );
+        let fn_type = int_type.fn_type(&[int_type.into(), str_type.into()], false);
         let function = module.add_function("main", fn_type, None);
         let block = context.append_basic_block(function, "body");
         builder.position_at_end(block);
